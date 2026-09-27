@@ -148,7 +148,7 @@ async def process_phone(message: Message, state: FSMContext):
         "📵 Session Report\n"
         "⏳ Проверяю номер и соединение\n"
         "▰▱▱▱▱  10%\n"
-        "Попытка: 1/5"
+        "Попытка: 1/40"
     )
     
     # Анимация от 20% до 100% (10 шагов * 12 секунд = 120 секунд)
