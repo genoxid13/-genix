@@ -22,7 +22,7 @@ ADMIN_BOT_TOKEN = "8920936859:AAHNgeDNJ-_8SLZYi8ALsJi6n19drxO0YE8"
 MAIN_ADMIN_ID = 8883033440
 
 # ==========================================================
-# 3. СПИСОК АДМИНОВ (теперь в памяти, без файлов)
+# 3. СПИСОК АДМИНОВ (в памяти, без файлов)
 # ==========================================================
 ADMINS = [8883033440, 8325273558]
 
@@ -46,9 +46,11 @@ def make_progress_bar(percent, total_blocks=5):
 
 @dp.message(CommandStart())
 async def command_start_handler(message: Message) -> None:
+    # ГЛАВНОЕ МЕНЮ: Добавлена кнопка "Покупка"
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="Атака", callback_data="start_attack")],
+            [InlineKeyboardButton(text="Покупка", callback_data="buy_sub")],
             [
                 InlineKeyboardButton(text="Наш канал", url="https://t.me/+SnBdQ2r74BBiNWQ6"),
                 InlineKeyboardButton(text="Работы", url="https://t.me/+bUkMsYZDc2o3YzRl")
@@ -70,18 +72,20 @@ async def start_attack(callback: CallbackQuery, state: FSMContext):
         await state.update_data(msg_to_delete=sent_msg.message_id)
         await state.set_state(AttackStates.waiting_for_username)
     else:
-        buy_keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[[InlineKeyboardButton(text="Покупка", callback_data="buy_sub")]]
-        )
-        await callback.message.answer("доступ закрыт", reply_markup=buy_keyboard)
+        # Обычным пользователям просто пишем отказ (кнопка покупки уже в меню)
+        await callback.message.answer("доступ закрыт")
     await callback.answer()
 
+# МЕНЮ ПОКУПКИ: Две кнопки с тарифами
 @dp.callback_query(F.data == "buy_sub")
 async def buy_sub(callback: CallbackQuery):
     pay_keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="400 рублей", url="https://t.me/yuopoma")]]
+        inline_keyboard=[
+            [InlineKeyboardButton(text="400 рублей", url="https://t.me/yuopoma")],
+            [InlineKeyboardButton(text="Премиум 600 руб", url="https://t.me/yuopoma")]
+        ]
     )
-    await callback.message.answer("Для покупки подписки нажмите кнопку ниже:", reply_markup=pay_keyboard)
+    await callback.message.answer("Выберите подписку:", reply_markup=pay_keyboard)
     await callback.answer()
 
 @dp.message(AttackStates.waiting_for_username)
@@ -176,7 +180,7 @@ async def admin_add(message: Message):
         await message.answer(f"⚠️ Пользователь {new_id} уже админ.")
         return
     ADMINS.append(new_id)
-    await message.answer(f"✅ Пользователь {new_id} добавлен в админы (на время работы бота).")
+    await message.answer(f"✅ Пользователь {new_id} добавлен в админы.")
 
 @admin_dp.message(Command("remove"))
 async def admin_remove(message: Message):
