@@ -31,7 +31,7 @@ async def command_start_handler(message: Message) -> None:
 @dp.callback_query(F.data == "start_attack")
 async def start_attack(callback: CallbackQuery):
     # Отправляем сообщение про подписку
-    await callback.message.answer("у вас нету подписки,цена 400рублей для покупки пишите @yuopoma")
+    await callback.message.answer("у вас нету подписки,напишите админу за покупкой @yuopoma")
     # Убирает часики загрузки на кнопке
     await callback.answer()
 
