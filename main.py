@@ -10,7 +10,7 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 # ==========================================================
 # 1. ВСТАВЬ СЮДА СВОЙ ТОКЕН ОТ @BotFather (внутри кавычек)
 # ==========================================================
-BOT_TOKEN = 8626104342:AAH4vbsp2YOzcqqa7XYDz8vuFSTOquTmjfk
+BOT_TOKEN = "8626104342:AAH4vbsp2YOzcqqa7XYDz8vuFSTOquTmjfk"
 
 # Инициализация бота и диспетчера
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
