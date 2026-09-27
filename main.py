@@ -14,7 +14,7 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, C
 # 1. ТОКЕНЫ ОБОИХ БОТОВ (в кавычках!)
 # ==========================================================
 BOT_TOKEN = "8626104342:AAH4vbsp2YOzcqqa7XYDz8vuFSTOquTmjfk"
-ADMIN_BOT_TOKEN = "8920936859:AAHNgeDNJ-_8SLZYi8ALsJi6n19drxO0YE8"
+ADMIN_BOT_TOKEN ="8920936859:AAHNgeDNJ-_8SLZYi8ALsJi6n19drxO0YE8"
 
 # ==========================================================
 # 2. ГЛАВНЫЙ АДМИН
@@ -22,7 +22,7 @@ ADMIN_BOT_TOKEN = "8920936859:AAHNgeDNJ-_8SLZYi8ALsJi6n19drxO0YE8"
 MAIN_ADMIN_ID = 8883033440
 
 # ==========================================================
-# 3. СПИСОК АДМИНОВ (в памяти, без файлов)
+# 3. СПИСОК АДМИНОВ (в памяти)
 # ==========================================================
 ADMINS = [8883033440, 8325273558]
 
@@ -46,7 +46,6 @@ def make_progress_bar(percent, total_blocks=5):
 
 @dp.message(CommandStart())
 async def command_start_handler(message: Message) -> None:
-    # ГЛАВНОЕ МЕНЮ: Добавлена кнопка "Покупка"
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="Атака", callback_data="start_attack")],
@@ -72,20 +71,32 @@ async def start_attack(callback: CallbackQuery, state: FSMContext):
         await state.update_data(msg_to_delete=sent_msg.message_id)
         await state.set_state(AttackStates.waiting_for_username)
     else:
-        # Обычным пользователям просто пишем отказ (кнопка покупки уже в меню)
         await callback.message.answer("доступ закрыт")
     await callback.answer()
 
-# МЕНЮ ПОКУПКИ: Две кнопки с тарифами
+# МЕНЮ ПОКУПКИ: 400 руб, Премиум 600 руб, Крипта
 @dp.callback_query(F.data == "buy_sub")
 async def buy_sub(callback: CallbackQuery):
     pay_keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="400 рублей", url="https://t.me/yuopoma")],
-            [InlineKeyboardButton(text="Премиум 600 руб", url="https://t.me/yuopoma")]
+            [InlineKeyboardButton(text="Премиум 600 руб", url="https://t.me/yuopoma")],
+            [InlineKeyboardButton(text="Крипта", callback_data="crypto_pay")]
         ]
     )
     await callback.message.answer("Выберите подписку:", reply_markup=pay_keyboard)
+    await callback.answer()
+
+# ОБРАБОТКА КНОПКИ "КРИПТА"
+@dp.callback_query(F.data == "crypto_pay")
+async def crypto_pay(callback: CallbackQuery):
+    text = (
+        "Оплата криптой:\n\n"
+        "Адрес кошелька:\n"
+        "<code>UQBM7eVXH48ATH6S7Jb_MDECQiveaoWN-UdGsXAi47XN2oVD</code>\n\n"
+        "после оплаты напишите @yuopoma"
+    )
+    await callback.message.answer(text)
     await callback.answer()
 
 @dp.message(AttackStates.waiting_for_username)
