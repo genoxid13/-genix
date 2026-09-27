@@ -1,7 +1,5 @@
 import asyncio
-import json
 import logging
-import os
 import re
 
 from aiogram import Bot, Dispatcher, F
@@ -19,38 +17,17 @@ BOT_TOKEN = "8626104342:AAH4vbsp2YOzcqqa7XYDz8vuFSTOquTmjfk"
 ADMIN_BOT_TOKEN = "8920936859:AAHNgeDNJ-_8SLZYi8ALsJi6n19drxO0YE8"
 
 # ==========================================================
-# 2. ГЛАВНЫЙ АДМИН (тот, кто может добавлять/удалять других)
+# 2. ГЛАВНЫЙ АДМИН
 # ==========================================================
 MAIN_ADMIN_ID = 8883033440
 
 # ==========================================================
- [# 8883. СТАР303ТОВЫЙ СПИСОК АДМИНОВ (е344сли файла нет)
+# 3. СПИСОК АДМИНОВ (теперь в памяти, без файлов)
 # ==========================================================
-DEFAULT_ADMINS =0, 8325273558]
-
-# Файл для хранения админов (создастся автоматически)
-ADMINS_FILE = "admins.json"
-
-# ==========================================================
-# ФУНКЦИИ ДЛЯ РАБОТЫ С АДМИНАМИ
-# ==========================================================
-def load_admins():
-    if os.path.exists(ADMINS_FILE):
-        try:
-            with open(ADMINS_FILE, "r") as f:
-                return json.load(f)
-        except Exception:
-            return list(DEFAULT_ADMINS)
-    else:
-        save_admins(DEFAULT_ADMINS)
-        return list(DEFAULT_ADMINS)
-
-def save_admins(admins):
-    with open(ADMINS_FILE, "w") as f:
-        json.dump(admins, f)
+ADMINS = [8883033440, 8325273558]
 
 def is_admin(user_id):
-    return user_id in load_admins()
+    return user_id in ADMINS
 
 # ==========================================================
 # ОСНОВНОЙ БОТ
@@ -195,13 +172,11 @@ async def admin_add(message: Message):
         await message.answer("❌ Использование: /add 123456789")
         return
     new_id = int(args[1])
-    admins = load_admins()
-    if new_id in admins:
+    if new_id in ADMINS:
         await message.answer(f"⚠️ Пользователь {new_id} уже админ.")
         return
-    admins.append(new_id)
-    save_admins(admins)
-    await message.answer(f"✅ Пользователь {new_id} добавлен в админы.")
+    ADMINS.append(new_id)
+    await message.answer(f"✅ Пользователь {new_id} добавлен в админы (на время работы бота).")
 
 @admin_dp.message(Command("remove"))
 async def admin_remove(message: Message):
@@ -216,12 +191,10 @@ async def admin_remove(message: Message):
     if rem_id == MAIN_ADMIN_ID:
         await message.answer("❌ Нельзя удалить главного админа.")
         return
-    admins = load_admins()
-    if rem_id not in admins:
+    if rem_id not in ADMINS:
         await message.answer(f"⚠️ Пользователя {rem_id} нет в админах.")
         return
-    admins.remove(rem_id)
-    save_admins(admins)
+    ADMINS.remove(rem_id)
     await message.answer(f"✅ Пользователь {rem_id} снят с админов.")
 
 @admin_dp.message(Command("list"))
@@ -229,8 +202,7 @@ async def admin_list(message: Message):
     if message.from_user.id != MAIN_ADMIN_ID:
         await message.answer("⛔ Нет доступа.")
         return
-    admins = load_admins()
-    text = "👥 Список админов:\n" + "\n".join([f"• {a}" for a in admins])
+    text = "👥 Список админов:\n" + "\n".join([f"• {a}" for a in ADMINS])
     await message.answer(text)
 
 # ==========================================================
