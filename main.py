@@ -10,7 +10,7 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, C
 # ==========================================================
 # ВСТАВЬ СЮДА СВОЙ ТОКЕН ОТ @BotFather
 # ==========================================================
-BOT_TOKEN = 8626104342:AAH4vbsp2YOzcqqa7XYDz8vuFSTOquTmjfk
+BOT_TOKEN = "8626104342:AAH4vbsp2YOzcqqa7XYDz8vuFSTOquTmjfk"
 
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
