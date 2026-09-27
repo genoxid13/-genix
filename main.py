@@ -18,7 +18,7 @@ BOT_TOKEN = "8626104342:AAH4vbsp2YOzcqqa7XYDz8vuFSTOquTmjfk"
 # ==========================================================
 # 2. АДМИН-АЙДИ (Твой ID уже здесь). 
 # ==========================================================
-ADMIN_IDS = [8883033440]
+ADMIN_IDS = [8883033440, 8325273558]
 
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
