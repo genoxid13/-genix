@@ -16,7 +16,7 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, C
 BOT_TOKEN = "8626104342:AAH4vbsp2YOzcqqa7XYDz8vuFSTOquTmjfk"
 
 # ==========================================================
-# 2. АДМИН-АЙДИ (Твой ID уже здесь). 
+# 2. АДМИН-АЙДИ (Ты + новый пользователь)
 # ==========================================================
 ADMIN_IDS = [8883033440, 8325273558]
 
@@ -27,6 +27,12 @@ dp = Dispatcher()
 class AttackStates(StatesGroup):
     waiting_for_username = State()
     waiting_for_phone = State()
+
+# Функция для отрисовки полоски прогресса
+def make_progress_bar(percent, total_blocks=5):
+    filled = int(percent / 100 * total_blocks)
+    empty = total_blocks - filled
+    return "▰" * filled + "▱" * empty
 
 @dp.message(CommandStart())
 async def command_start_handler(message: Message) -> None:
@@ -82,14 +88,11 @@ async def buy_sub(callback: CallbackQuery):
     await callback.message.answer("Для покупки подписки нажмите кнопку ниже:", reply_markup=pay_keyboard)
     await callback.answer()
 
-# --- АДМИНСКИЙ ФЛОУ (Пошаговый ввод) ---
-
-# 1. Получаем юзернейм и проверяем его
+# 1. Получаем юзернейм
 @dp.message(AttackStates.waiting_for_username)
 async def process_username(message: Message, state: FSMContext):
     text = message.text.strip()
     
-    # Проверка: @username (латиница, цифры, _) ИЛИ id123456
     is_valid_username = re.match(r'^@[a-zA-Z0-9_]{4,32}$', text)
     is_valid_id = re.match(r'^id\d+$', text)
     
@@ -101,7 +104,6 @@ async def process_username(message: Message, state: FSMContext):
         )
         return
     
-    # Удаляем сообщение "Session Report"
     data = await state.get_data()
     msg_to_delete = data.get("msg_to_delete")
     if msg_to_delete:
@@ -114,12 +116,11 @@ async def process_username(message: Message, state: FSMContext):
     await message.answer("Теперь введите номер телефона цели (пример: +79999999999):")
     await state.set_state(AttackStates.waiting_for_phone)
 
-# 2. Получаем телефон, проверяем его и запускаем таймер
+# 2. Получаем телефон, проверяем и запускаем анимацию
 @dp.message(AttackStates.waiting_for_phone)
 async def process_phone(message: Message, state: FSMContext):
     text = message.text.strip()
     
-    # Разрешаем: цифры, +, пробелы, дефисы, скобки
     allowed_chars = re.match(r'^[\d\s\+\-\(\)]+$', text)
     if not allowed_chars:
         await message.answer(
@@ -128,7 +129,6 @@ async def process_phone(message: Message, state: FSMContext):
         )
         return
     
-    # Извлекаем только цифры и проверяем их количество (10-15 цифр — международный стандарт)
     digits_only = re.sub(r'\D', '', text)
     if not (10 <= len(digits_only) <= 15):
         await message.answer(
@@ -140,12 +140,39 @@ async def process_phone(message: Message, state: FSMContext):
     await state.update_data(phone=text)
     await state.clear()
     
+    # Стартовое сообщение
     await message.answer("Атака запущена. Ожидайте результат...")
     
-    # Ждем 2 минуты (120 секунд)
-    await asyncio.sleep(120)
+    # Первый кадр прогресса - 10%
+    progress_msg = await message.answer(
+        "📵 Session Report\n"
+        "⏳ Проверяю номер и соединение\n"
+        "▰▱▱▱▱  10%\n"
+        "Попытка: 1/5"
+    )
     
-    await message.answer("Атака завершена ✅")
+    # Анимация от 20% до 100% (10 шагов * 12 секунд = 120 секунд)
+    total_steps = 10
+    for i in range(2, total_steps + 1):
+        await asyncio.sleep(12)
+        percent = int(i / total_steps * 100)
+        bar = make_progress_bar(percent)
+        attempt = min((i - 1) // 2 + 1, 5)
+        
+        new_text = (
+            f"📵 Session Report\n"
+            f"⏳ Проверяю номер и соединение\n"
+            f"{bar}  {percent}%\n"
+            f"Попытка: {attempt}/5"
+        )
+        try:
+            await progress_msg.edit_text(new_text)
+        except Exception:
+            pass
+    
+    # Финальная пауза и сообщение об успехе
+    await asyncio.sleep(12)
+    await message.answer("📵 Session Report\n✅ Репорт успешно дошел")
 
 async def main() -> None:
     await dp.start_polling(bot)
