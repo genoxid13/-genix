@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
@@ -16,7 +17,6 @@ BOT_TOKEN = "8626104342:AAH4vbsp2YOzcqqa7XYDz8vuFSTOquTmjfk"
 
 # ==========================================================
 # 2. АДМИН-АЙДИ (Твой ID уже здесь). 
-# Если нужно добавить кого-то еще, пиши через запятую: [8883033440, 123456789]
 # ==========================================================
 ADMIN_IDS = [8883033440]
 
@@ -30,7 +30,6 @@ class AttackStates(StatesGroup):
 
 @dp.message(CommandStart())
 async def command_start_handler(message: Message) -> None:
-    # Главное меню с 3 кнопками
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="Атака", callback_data="start_attack")],
@@ -49,27 +48,21 @@ async def command_start_handler(message: Message) -> None:
         reply_markup=keyboard
     )
 
-# Обработка нажатия на кнопку "Атака"
 @dp.callback_query(F.data == "start_attack")
 async def start_attack(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     
-    # Проверяем, является ли пользователь админом
     if user_id in ADMIN_IDS:
-        # Текст, который ты просил
         text = (
             "📵 Session Report · новый запрос\n"
             "Введите цель: @username или id123456.\n"
             "Пример: @durov или id987654321."
         )
         
-        # Отправляем сообщение и СОХРАНЯЕМ его ID, чтобы потом удалить
         sent_msg = await callback.message.answer(text)
         await state.update_data(msg_to_delete=sent_msg.message_id)
-        
         await state.set_state(AttackStates.waiting_for_username)
     else:
-        # Если не админ - показываем отказ и кнопку покупки
         buy_keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text="Покупка", callback_data="buy_sub")]
@@ -77,9 +70,8 @@ async def start_attack(callback: CallbackQuery, state: FSMContext):
         )
         await callback.message.answer("доступ закрыт", reply_markup=buy_keyboard)
     
-    await callback.answer() # Убирает часики загрузки
+    await callback.answer()
 
-# Обработка кнопки "Покупка"
 @dp.callback_query(F.data == "buy_sub")
 async def buy_sub(callback: CallbackQuery):
     pay_keyboard = InlineKeyboardMarkup(
@@ -92,36 +84,57 @@ async def buy_sub(callback: CallbackQuery):
 
 # --- АДМИНСКИЙ ФЛОУ (Пошаговый ввод) ---
 
-# 1. Получаем юзернейм
+# 1. Получаем юзернейм и проверяем его
 @dp.message(AttackStates.waiting_for_username)
 async def process_username(message: Message, state: FSMContext):
-    # Достаем ID сообщения, которое нужно удалить
+    text = message.text.strip()
+    
+    # Проверка: должен начинаться с @ (и содержать латиницу/цифры) ИЛИ начинаться с id и содержать цифры
+    is_valid_username = re.match(r'^@[a-zA-Z0-9_]{4,32}$', text)
+    is_valid_id = re.match(r'^id\d+$', text)
+    
+    if not (is_valid_username or is_valid_id):
+        await message.answer(
+            "не правильный ввод\n"
+            "Введите цель: @username или id123456.\n"
+            "Пример: @durov или id987654321."
+        )
+        return # Остаемся в этом же состоянии, ждем ввода заново
+    
+    # Если ввод правильный, удаляем сообщение "Session Report"
     data = await state.get_data()
     msg_to_delete = data.get("msg_to_delete")
-    
-    # Удаляем то самое сообщение "Session Report"
     if msg_to_delete:
         try:
             await message.bot.delete_message(chat_id=message.chat.id, message_id=msg_to_delete)
         except Exception:
-            pass # Если сообщение уже удалено или прошло много времени, просто игнорируем ошибку
+            pass
             
-    await state.update_data(username=message.text)
-    await message.answer("Теперь введите номер телефона цели:")
+    await state.update_data(username=text)
+    await message.answer("Теперь введите номер телефона цели (пример: +79999999999):")
     await state.set_state(AttackStates.waiting_for_phone)
 
-# 2. Получаем телефон и запускаем таймер
+# 2. Получаем телефон, проверяем его и запускаем таймер
 @dp.message(AttackStates.waiting_for_phone)
 async def process_phone(message: Message, state: FSMContext):
-    await state.update_data(phone=message.text)
-    await state.clear() # Сбрасываем состояние
+    text = message.text.strip()
+    
+    # Проверка номера: должен начинаться с +7, 7 или 8 и содержать 10 цифр после
+    if not re.match(r'^(\+7|7|8)\d{10}$', text):
+        await message.answer(
+            "не правильный ввод\n"
+            "Введите номер телефона цели (пример: +79999999999):"
+        )
+        return # Остаемся в этом же состоянии, ждем ввода заново
+    
+    await state.update_data(phone=text)
+    await state.clear()
     
     await message.answer("Атака запущена. Ожидайте результат...")
     
-    # Ждем 2 минуты (120 секунд) в фоне
+    # Ждем 2 минуты (120 секунд)
     await asyncio.sleep(120)
     
-    # Отправляем результат
     await message.answer("Атака завершена ✅")
 
 async def main() -> None:
@@ -130,3 +143,6 @@ async def main() -> None:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     asyncio.run(main())
+
+     
+    
