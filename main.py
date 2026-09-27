@@ -89,7 +89,7 @@ async def buy_sub(callback: CallbackQuery):
 async def process_username(message: Message, state: FSMContext):
     text = message.text.strip()
     
-    # Проверка: должен начинаться с @ (и содержать латиницу/цифры) ИЛИ начинаться с id и содержать цифры
+    # Проверка: @username (латиница, цифры, _) ИЛИ id123456
     is_valid_username = re.match(r'^@[a-zA-Z0-9_]{4,32}$', text)
     is_valid_id = re.match(r'^id\d+$', text)
     
@@ -99,9 +99,9 @@ async def process_username(message: Message, state: FSMContext):
             "Введите цель: @username или id123456.\n"
             "Пример: @durov или id987654321."
         )
-        return # Остаемся в этом же состоянии, ждем ввода заново
+        return
     
-    # Если ввод правильный, удаляем сообщение "Session Report"
+    # Удаляем сообщение "Session Report"
     data = await state.get_data()
     msg_to_delete = data.get("msg_to_delete")
     if msg_to_delete:
@@ -119,13 +119,23 @@ async def process_username(message: Message, state: FSMContext):
 async def process_phone(message: Message, state: FSMContext):
     text = message.text.strip()
     
-    # Проверка номера: должен начинаться с +7, 7 или 8 и содержать 10 цифр после
-    if not re.match(r'^(\+7|7|8)\d{10}$', text):
+    # Разрешаем: цифры, +, пробелы, дефисы, скобки
+    allowed_chars = re.match(r'^[\d\s\+\-\(\)]+$', text)
+    if not allowed_chars:
         await message.answer(
             "не правильный ввод\n"
             "Введите номер телефона цели (пример: +79999999999):"
         )
-        return # Остаемся в этом же состоянии, ждем ввода заново
+        return
+    
+    # Извлекаем только цифры и проверяем их количество (10-15 цифр — международный стандарт)
+    digits_only = re.sub(r'\D', '', text)
+    if not (10 <= len(digits_only) <= 15):
+        await message.answer(
+            "не правильный ввод\n"
+            "Введите номер телефона цели (пример: +79999999999):"
+        )
+        return
     
     await state.update_data(phone=text)
     await state.clear()
@@ -143,6 +153,3 @@ async def main() -> None:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     asyncio.run(main())
-
-     
-    
