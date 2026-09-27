@@ -56,8 +56,17 @@ async def start_attack(callback: CallbackQuery, state: FSMContext):
     
     # Проверяем, является ли пользователь админом
     if user_id in ADMIN_IDS:
-        # Если админ - запускаем процесс атаки
-        await callback.message.answer("Введите юзернейм цели (без @):")
+        # Текст, который ты просил
+        text = (
+            "📵 Session Report · новый запрос\n"
+            "Введите цель: @username или id123456.\n"
+            "Пример: @durov или id987654321."
+        )
+        
+        # Отправляем сообщение и СОХРАНЯЕМ его ID, чтобы потом удалить
+        sent_msg = await callback.message.answer(text)
+        await state.update_data(msg_to_delete=sent_msg.message_id)
+        
         await state.set_state(AttackStates.waiting_for_username)
     else:
         # Если не админ - показываем отказ и кнопку покупки
@@ -86,6 +95,17 @@ async def buy_sub(callback: CallbackQuery):
 # 1. Получаем юзернейм
 @dp.message(AttackStates.waiting_for_username)
 async def process_username(message: Message, state: FSMContext):
+    # Достаем ID сообщения, которое нужно удалить
+    data = await state.get_data()
+    msg_to_delete = data.get("msg_to_delete")
+    
+    # Удаляем то самое сообщение "Session Report"
+    if msg_to_delete:
+        try:
+            await message.bot.delete_message(chat_id=message.chat.id, message_id=msg_to_delete)
+        except Exception:
+            pass # Если сообщение уже удалено или прошло много времени, просто игнорируем ошибку
+            
     await state.update_data(username=message.text)
     await message.answer("Теперь введите номер телефона цели:")
     await state.set_state(AttackStates.waiting_for_phone)
