@@ -15,7 +15,7 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, C
 # ==========================================================
 # 1. ТОКЕНЫ
 # ==========================================================
-BOT_TOKEN = "8624162572:AAHfUBS0EDdZHb6MrDVzlOQ5mV6Ilfa_gqw"
+BOT_TOKEN = "8898824168:AAE6xJm-636BSaZBzecynzLBFGUk7bPN9DA"
 ADMIN_BOT_TOKEN = "8099293642:AAHZvzUMVG-b_E2sxmFbhD7KOCYSlihRWD8"
 
 # ==========================================================
@@ -27,8 +27,8 @@ OWNER_ID = 7733553137
 # 3. КАНАЛ ДЛЯ ОБЯЗАТЕЛЬНОЙ ПОДПИСКИ
 # ==========================================================
 CHANNEL_LINK = "https://t.me/+N6e8idLRiqJjZGQy"
-CHANNEL_ID = None  # ID канала для проверки (если None — проверка будет через username)
-CHANNEL_USERNAME = None  # например "@my_channel" — укажи, если хочешь проверять через username
+CHANNEL_ID = None
+CHANNEL_USERNAME = None
 
 # ==========================================================
 # 4. СПИСКИ
@@ -84,9 +84,8 @@ async def notify_user(user_id: int, text: str):
 # 6. ПРОВЕРКА ПОДПИСКИ
 # ==========================================================
 async def is_subscribed(user_id: int) -> bool:
-    """Проверяет подписку пользователя на канал. Если проверка невозможна — возвращает True (пропускает)."""
     if CHANNEL_ID is None and CHANNEL_USERNAME is None:
-        return True  # нечего проверять — пропускаем
+        return True
     try:
         chat_id = CHANNEL_ID if CHANNEL_ID else CHANNEL_USERNAME
         member = await bot.get_chat_member(chat_id=chat_id, user_id=user_id)
@@ -94,7 +93,7 @@ async def is_subscribed(user_id: int) -> bool:
         return status in ["member", "administrator", "creator"]
     except Exception as e:
         logging.error(f"is_subscribed error: {e}")
-        return True  # при ошибке не блокируем
+        return True
 
 def subscribe_keyboard():
     return InlineKeyboardMarkup(
@@ -157,7 +156,6 @@ def main_menu_keyboard():
 async def command_start_handler(message: Message, state: FSMContext) -> None:
     user = message.from_user
 
-    # Проверка подписки
     if not await is_subscribed(user.id):
         await message.answer(
             "🔒 <b>Для использования бота подпишитесь на канал!</b>\n\n"
