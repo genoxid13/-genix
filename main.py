@@ -24,9 +24,9 @@ OWNER_ID = 8883033440
 # ==========================================================
 # 3. СПИСКИ ПОЛЬЗОВАТЕЛЕЙ (в памяти)
 # ==========================================================
-ADMINS = [8883033440, 8325273558]  # Админы (полный доступ)
-BASIC_SUBS = []  # Базовая подписка (400р) — только кнопка "Атака"
-VIP_SUBS = []    # VIP подписка (600р) — "Атака" + "B@t m@tod"
+ADMINS = [8883033440, 8325273558]
+BASIC_SUBS = []
+VIP_SUBS = []
 
 def get_user_role(user_id):
     if user_id in ADMINS or user_id == OWNER_ID:
@@ -61,17 +61,45 @@ async def command_start_handler(message: Message) -> None:
         inline_keyboard=[
             [InlineKeyboardButton(text="Атака", callback_data="start_attack")],
             [InlineKeyboardButton(text="B@t m@tod", callback_data="bot_method")],
-            [InlineKeyboardButton(text="Покупка", callback_data="buy_sub")],
+            [
+                InlineKeyboardButton(text="Покупка", callback_data="buy_sub"),
+                InlineKeyboardButton(text="Профиль", callback_data="profile")
+            ],
             [
                 InlineKeyboardButton(text="Наш канал", url="https://t.me/+SnBdQ2r74BBiNWQ6"),
                 InlineKeyboardButton(text="Работы", url="https://t.me/+bUkMsYZDc2o3YzRl")
             ]
         ]
     )
-    PHOTO_URL = "https://i.postimg.cc/pdG4tPSh/IMG-3660.jpg"
+    PHOTO_URL = "https://i.postimg.cc/BnWNfr6N/IMG-3869.jpg"
     await message.answer_photo(photo=PHOTO_URL, caption="Главное меню", reply_markup=keyboard)
 
-# --- КНОПКА "АТАКА" (Админы, VIP, Базовая) ---
+# --- КНОПКА "ПРОФИЛЬ" ---
+@dp.callback_query(F.data == "profile")
+async def profile_handler(callback: CallbackQuery):
+    user = callback.from_user
+    username = f"@{user.username}" if user.username else "не установлен"
+    role = get_user_role(user.id)
+    
+    if role == "admin":
+        sub_text = "Админ (полный доступ)"
+    elif role == "vip":
+        sub_text = "Премиум (600₽)"
+    elif role == "basic":
+        sub_text = "Базовая (400₽)"
+    else:
+        sub_text = "Отсутствует"
+    
+    text = (
+        f"👤 Профиль\n\n"
+        f"Юзернейм: {username}\n"
+        f"ID: <code>{user.id}</code>\n"
+        f"Подписка: {sub_text}"
+    )
+    await callback.message.answer(text)
+    await callback.answer()
+
+# --- КНОПКА "АТАКА" ---
 @dp.callback_query(F.data == "start_attack")
 async def start_attack(callback: CallbackQuery, state: FSMContext):
     role = get_user_role(callback.from_user.id)
@@ -99,27 +127,21 @@ async def start_bot_method(callback: CallbackQuery, state: FSMContext):
         )
         await state.set_state(BotMethodStates.waiting_for_bot_link)
     else:
-        # Всем остальным (включая базовую подписку) — отказ
         await callback.message.answer("доступно только с премиум")
     await callback.answer()
 
 @dp.message(BotMethodStates.waiting_for_bot_link)
 async def process_bot_link(message: Message, state: FSMContext):
     text = message.text.strip()
-    
-    # Валидатор: @username, заканчивается на bot
     if not re.match(r'^@[a-zA-Z0-9_]{3,32}bot$', text):
         await message.answer(
             "не правильный ввод. Юзернейм бота должен заканчиваться на 'bot' (пример: @durov_bot).\n"
             "Попробуйте снова:"
         )
         return
-    
     await state.clear()
     await message.answer("Запрос принят. Ожидайте результат...")
-    
     await asyncio.sleep(120)
-    
     await message.answer("репорт доставлен")
 
 # --- МЕНЮ ПОКУПКИ ---
@@ -262,7 +284,6 @@ async def admin_remove(message: Message):
     ADMINS.remove(rem_id)
     await message.answer(f"✅ Пользователь {rem_id} снят с админов.")
 
-# --- БАЗОВАЯ ПОДПИСКА (400р) ---
 @admin_dp.message(Command("addbasic"))
 async def add_basic(message: Message):
     if message.from_user.id != OWNER_ID:
@@ -293,7 +314,6 @@ async def remove_basic(message: Message):
     BASIC_SUBS.remove(rem_id)
     await message.answer(f"✅ Базовая подписка снята с {rem_id}.")
 
-# --- VIP ПОДПИСКА (600р) ---
 @admin_dp.message(Command("addvip"))
 async def add_vip(message: Message):
     if message.from_user.id != OWNER_ID:
