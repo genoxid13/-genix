@@ -40,8 +40,11 @@ def get_user_role(user_id):
         return "basic"
     return "none"
 
+def now_str():
+    return datetime.now().strftime("%d.%m.%Y %H:%M")
+
 # ==========================================================
-# 4. СОЗДАЁМ ОБА БОТА СРАЗУ (нужно для уведомлений)
+# 4. СОЗДАЁМ ОБА БОТА СРАЗУ
 # ==========================================================
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
@@ -50,19 +53,17 @@ admin_bot = Bot(token=ADMIN_BOT_TOKEN, default=DefaultBotProperties(parse_mode=P
 admin_dp = Dispatcher()
 
 async def send_report(text: str):
-    """Отправить уведомление владельцу во второй бот"""
     try:
         await admin_bot.send_message(OWNER_ID, text)
     except Exception as e:
         logging.error(f"Не удалось отправить репорт: {e}")
 
 async def notify_user(user_id: int, text: str):
-    """Отправить уведомление пользователю в основной бот"""
     try:
         await bot.send_message(user_id, text)
         return True
     except Exception as e:
-        logging.error(f"Не удалось отправить уведомление пользователю {user_id}: {e}")
+        logging.error(f"Не удалось отправить уведомление {user_id}: {e}")
         return False
 
 # ==========================================================
@@ -107,7 +108,7 @@ async def command_start_handler(message: Message, state: FSMContext) -> None:
         USERS[user.id] = {
             "username": user.username or "нет",
             "first_name": user.first_name or "нет",
-            "date": datetime.now().strftime("%d.%m.%Y %H:%M")
+            "date": now_str()
         }
         await send_report(
             f"🆕 Новый пользователь в боте!\n\n"
@@ -230,14 +231,13 @@ async def process_bot_link(message: Message, state: FSMContext):
         f"🤖 НОВЫЙ B@t m@tod РЕПОРТ\n\n"
         f"👤 От: {user.first_name} (@{user.username if user.username else 'без юзернейма'})\n"
         f"🆔 ID: <code>{user.id}</code>\n"
-        f"📊 Роль: {role_}\n"
+        f"📊 Роль: {role}\n"
         f"🎯 Цель (бот): <code>{text}</code>\n"
-        f"🕐 {datetime.nowusername().strftime('%d.%m.%Y)
- %H:%M')}"
+        f"🕐 {now_str()}"
     )
     
-   async await asyn defcio.sleep(120)
-    await message.answer(" processрепорт доставлен")
+    await asyncio.sleep(120)
+    await message.answer("репорт доставлен")
 
 @dp.callback_query(F.data == "buy_sub")
 async def buy_sub(callback: CallbackQuery):
@@ -262,7 +262,8 @@ async def crypto_pay(callback: CallbackQuery):
     await callback.message.answer(text)
     await callback.answer()
 
-@dp.message(AttackStates.waiting_for_username(message: Message, state: FSMContext):
+@dp.message(AttackStates.waiting_for_username)
+async def process_username(message: Message, state: FSMContext):
     text = message.text.strip()
     is_valid_username = re.match(r'^@[a-zA-Z0-9_]{4,32}$', text)
     is_valid_id = re.match(r'^id\d+$', text)
@@ -317,7 +318,7 @@ async def process_phone(message: Message, state: FSMContext):
         f"🎯 Цель: <code>{target_username}</code>\n"
         f"📞 Номер: <code>{phone_display}</code>\n"
         f"───────────────\n"
-        f"🕐 {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+        f"🕐 {now_str()}"
     )
     
     progress_msg = await message.answer(
@@ -343,7 +344,7 @@ async def process_phone(message: Message, state: FSMContext):
     await message.answer("📵 Session Report\n✅ Репорт успешно дошел")
 
 # ==========================================================
-# АДМИН-БОТ (команды)
+# АДМИН-БОТ
 # ==========================================================
 @admin_dp.message(CommandStart())
 async def admin_start(message: Message):
@@ -401,7 +402,7 @@ async def admin_add(message: Message):
         return
     new_id = int(args[1])
     if new_id in ADMINS:
-        await message.answer(f"⚠️ Уже админ.")
+        await message.answer("⚠️ Уже админ.")
         return
     ADMINS.append(new_id)
     await message.answer(f"✅ {new_id} добавлен в админы.")
@@ -419,12 +420,11 @@ async def admin_remove(message: Message):
         await message.answer("❌ Нельзя удалить владельца.")
         return
     if rem_id not in ADMINS:
-        await message.answer(f"⚠️ Нет в админах.")
+        await message.answer("⚠️ Нет в админах.")
         return
     ADMINS.remove(rem_id)
     await message.answer(f"✅ {rem_id} снят с админов.")
 
-# --- БАЗОВАЯ ПОДПИСКА (400р) ---
 @admin_dp.message(Command("addbasic"))
 async def add_basic(message: Message):
     if message.from_user.id != OWNER_ID:
@@ -435,16 +435,11 @@ async def add_basic(message: Message):
         return
     new_id = int(args[1])
     if new_id in BASIC_SUBS:
-        await message.answer(f"⚠️ Уже есть база.")
+        await message.answer("⚠️ Уже есть база.")
         return
-    
-    # Если у человека VIP — снимаем его
     if new_id in VIP_SUBS:
         VIP_SUBS.remove(new_id)
-    
     BASIC_SUBS.append(new_id)
-    
-    # Уведомляем пользователя
     sent = await notify_user(
         new_id,
         "🎉 Вам выдана подписка!\n\n"
@@ -452,11 +447,10 @@ async def add_basic(message: Message):
         "Теперь вам доступны кнопки «Атака».\n"
         "Приятного использования!"
     )
-    
     if sent:
         await message.answer(f"✅ {new_id} получил Базу (400р). Уведомление отправлено.")
     else:
-        await message.answer(f"✅ {new_id} получил Базу (400р). ⚠️ Не удалось отправить уведомление (возможно, не запускал бота).")
+        await message.answer(f"✅ {new_id} получил Базу (400р). ⚠️ Уведомление не доставлено.")
 
 @admin_dp.message(Command("removebasic"))
 async def remove_basic(message: Message):
@@ -468,24 +462,20 @@ async def remove_basic(message: Message):
         return
     rem_id = int(args[1])
     if rem_id not in BASIC_SUBS:
-        await message.answer(f"⚠️ Нет базы.")
+        await message.answer("⚠️ Нет базы.")
         return
     BASIC_SUBS.remove(rem_id)
-    
-    # Уведомляем пользователя
     sent = await notify_user(
         rem_id,
         "⚠️ Ваша подписка была снята.\n\n"
         "💳 Тариф: Базовая (400₽)\n\n"
         "Если это ошибка — напишите @yuopoma"
     )
-    
     if sent:
         await message.answer(f"✅ База снята с {rem_id}. Уведомление отправлено.")
     else:
         await message.answer(f"✅ База снята с {rem_id}. ⚠️ Уведомление не доставлено.")
 
-# --- VIP ПОДПИСКА (600р) ---
 @admin_dp.message(Command("addvip"))
 async def add_vip(message: Message):
     if message.from_user.id != OWNER_ID:
@@ -496,16 +486,11 @@ async def add_vip(message: Message):
         return
     new_id = int(args[1])
     if new_id in VIP_SUBS:
-        await message.answer(f"⚠️ Уже VIP.")
+        await message.answer("⚠️ Уже VIP.")
         return
-    
-    # Если у человека База — снимаем её
     if new_id in BASIC_SUBS:
         BASIC_SUBS.remove(new_id)
-    
     VIP_SUBS.append(new_id)
-    
-    # Уведомляем пользователя
     sent = await notify_user(
         new_id,
         "💎 Вам выдана VIP подписка!\n\n"
@@ -515,11 +500,10 @@ async def add_vip(message: Message):
         "• Кнопка «B@t m@tod»\n\n"
         "Приятного использования!"
     )
-    
     if sent:
         await message.answer(f"✅ {new_id} получил VIP (600р). Уведомление отправлено.")
     else:
-        await message.answer(f"✅ {new_id} получил VIP (600р). ⚠️ Не удалось отправить уведомление (возможно, не запускал бота).")
+        await message.answer(f"✅ {new_id} получил VIP (600р). ⚠️ Уведомление не доставлено.")
 
 @admin_dp.message(Command("removevip"))
 async def remove_vip(message: Message):
@@ -531,18 +515,15 @@ async def remove_vip(message: Message):
         return
     rem_id = int(args[1])
     if rem_id not in VIP_SUBS:
-        await message.answer(f"⚠️ Нет VIP.")
+        await message.answer("⚠️ Нет VIP.")
         return
     VIP_SUBS.remove(rem_id)
-    
-    # Уведомляем пользователя
     sent = await notify_user(
         rem_id,
         "⚠️ Ваша VIP подписка была снята.\n\n"
         "💎 Тариф: Премиум (600₽)\n\n"
         "Если это ошибка — напишите @yuopoma"
     )
-    
     if sent:
         await message.answer(f"✅ VIP снят с {rem_id}. Уведомление отправлено.")
     else:
@@ -560,7 +541,7 @@ async def list_subs(message: Message):
     await message.answer(text)
 
 # ==========================================================
-# ЗАПУСК ОБОИХ БОТОВ
+# ЗАПУСК
 # ==========================================================
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
