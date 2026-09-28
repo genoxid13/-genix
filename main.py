@@ -1,6 +1,8 @@
 import asyncio
 import logging
+import random
 import re
+from datetime import datetime
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
@@ -27,6 +29,7 @@ OWNER_ID = 8883033440
 ADMINS = [8883033440, 8325273558]
 BASIC_SUBS = []
 VIP_SUBS = []
+USERS = {}  # {user_id: {"username": ..., "first_name": ..., "date": ...}}
 
 def get_user_role(user_id):
     if user_id in ADMINS or user_id == OWNER_ID:
@@ -50,14 +53,16 @@ class AttackStates(StatesGroup):
 class BotMethodStates(StatesGroup):
     waiting_for_bot_link = State()
 
+class CaptchaStates(StatesGroup):
+    waiting_for_answer = State()
+
 def make_progress_bar(percent, total_blocks=5):
     filled = int(percent / 100 * total_blocks)
     empty = total_blocks - filled
     return "▰" * filled + "▱" * empty
 
-@dp.message(CommandStart())
-async def command_start_handler(message: Message) -> None:
-    keyboard = InlineKeyboardMarkup(
+def main_menu_keyboard():
+    return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="Атака", callback_data="start_attack")],
             [InlineKeyboardButton(text="B@t m@tod", callback_data="bot_method")],
@@ -71,8 +76,65 @@ async def command_start_handler(message: Message) -> None:
             ]
         ]
     )
+
+@dp.message(CommandStart())
+async def command_start_handler(message: Message, state: FSMContext) -> None:
+    user = message.from_user
+    
+    # Сохраняем пользователя
+    if user.id not in USERS:
+        USERS[user.id] = {
+            "username": user.username or "нет",
+            "first_name": user.first_name or "нет",
+            "date": datetime.now().strftime("%d.%m.%Y %H:%M")
+        }
+    
+    # Если пользователь уже прошел капчу (он в USERS и не первый раз) — сразу меню
+    # Проверяем, проходил ли он уже капчу (флаг в data)
+    data = await state.get_data()
+    if data.get("captcha_passed"):
+        PHOTO_URL = "https://i.postimg.cc/BnWNfr6N/IMG-3869.jpg"
+        await message.answer_photo(photo=PHOTO_URL, caption="Главное меню", reply_markup=main_menu_keyboard())
+        return
+    
+    # Генерируем простой пример
+    a = random.randint(1, 9)
+    b = random.randint(1, 9)
+    correct = a + b
+    
+    await state.update_data(captcha_answer=correct)
+    await state.set_state(CaptchaStates.waiting_for_answer)
+    
+    await message.answer(
+        f"🤖 Проверка на робота\n\n"
+        f"Решите пример: <b>{a} + {b} = ?</b>\n\n"
+        f"Напишите ответ сообщением."
+    )
+
+@dp.message(CaptchaStates.waiting_for_answer)
+async def captcha_answer(message: Message, state: FSMContext):
+    text = message.text.strip()
+    data = await state.get_data()
+    correct = data.get("captcha_answer")
+    
+    if not text.isdigit() or int(text) != correct:
+        # Неверный ответ — генерируем новый пример
+        a = random.randint(1, 9)
+        b = random.randint(1, 9)
+        new_correct = a + b
+        await state.update_data(captcha_answer=new_correct)
+        await message.answer(
+            f"❌ Неверно. Попробуйте снова:\n\n"
+            f"Решите пример: <b>{a} + {b} = ?</b>"
+        )
+        return
+    
+    # Верный ответ
+    await state.update_data(captcha_passed=True, captcha_answer=None)
+    await state.set_state(None)
+    
     PHOTO_URL = "https://i.postimg.cc/BnWNfr6N/IMG-3869.jpg"
-    await message.answer_photo(photo=PHOTO_URL, caption="Главное меню", reply_markup=keyboard)
+    await message.answer_photo(photo=PHOTO_URL, caption="Главное меню", reply_markup=main_menu_keyboard())
 
 # --- КНОПКА "ПРОФИЛЬ" ---
 @dp.callback_query(F.data == "profile")
@@ -242,6 +304,7 @@ async def admin_start(message: Message):
     await message.answer(
         "👋 Привет, владелец!\n\n"
         "Команды:\n"
+        "/users — список всех пользователей бота\n"
         "/add 123456789 — добавить админа\n"
         "/remove 123456789 — снять админа\n"
         "/addbasic 123456789 — выдать базовую подписку (400р)\n"
@@ -250,6 +313,39 @@ async def admin_start(message: Message):
         "/removevip 123456789 — снять VIP подписку\n"
         "/listsubs — список всех подписок"
     )
+
+# --- СПИСОК ВСЕХ ПОЛЬЗОВАТЕЛЕЙ ---
+@admin_dp.message(Command("users"))
+async def admin_users(message: Message):
+    if message.from_user.id != OWNER_ID:
+        return
+    if not USERS:
+        await message.answer("Пока никто не запускал бота.")
+        return
+    
+    text = f"👥 Всего пользователей: {len(USERS)}\n\n"
+    for uid, info in USERS.items():
+        role = get_user_role(uid)
+        if role == "admin":
+            tag = "👑 Админ"
+        elif role == "vip":
+            tag = "💎 VIP"
+        elif role == "basic":
+            tag = "💳 База"
+        else:
+            tag = "—"
+        
+        uname = f"@{info['username']}" if info['username'] != "нет" else "без юзернейма"
+        text += f"• {info['first_name']} ({uname})\n"
+        text += f"  ID: <code>{uid}</code>\n"
+        text += f"  Подписка: {tag}\n"
+        text += f"  Дата входа: {info['date']}\n\n"
+    
+    # Если текст длинный — режем
+    if len(text) > 4000:
+        text = text[:4000] + "\n\n... (список обрезан)"
+    
+    await message.answer(text)
 
 @admin_dp.message(Command("add"))
 async def admin_add(message: Message):
