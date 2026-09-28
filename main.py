@@ -26,10 +26,10 @@ OWNER_ID = 8883033440
 # ==========================================================
 # 3. СПИСКИ ПОЛЬЗОВАТЕЛЕЙ (в памяти)
 # ==========================================================
-ADMINS = [8883033440, 8325273558]
-BASIC_SUBS = []
+ADMINS = [8883033440]
+BASIC_SUBS = [8325273558]
 VIP_SUBS = []
-USERS = {}  # {user_id: {"username": ..., "first_name": ..., "date": ...}}
+USERS = {}
 
 def get_user_role(user_id):
     if user_id in ADMINS or user_id == OWNER_ID:
@@ -41,11 +41,33 @@ def get_user_role(user_id):
     return "none"
 
 # ==========================================================
-# ОСНОВНОЙ БОТ
+# 4. СОЗДАЁМ ОБА БОТА СРАЗУ (нужно для уведомлений)
 # ==========================================================
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
+admin_bot = Bot(token=ADMIN_BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+admin_dp = Dispatcher()
+
+async def send_report(text: str):
+    """Отправить уведомление владельцу во второй бот"""
+    try:
+        await admin_bot.send_message(OWNER_ID, text)
+    except Exception as e:
+        logging.error(f"Не удалось отправить репорт: {e}")
+
+async def notify_user(user_id: int, text: str):
+    """Отправить уведомление пользователю в основной бот"""
+    try:
+        await bot.send_message(user_id, text)
+        return True
+    except Exception as e:
+        logging.error(f"Не удалось отправить уведомление пользователю {user_id}: {e}")
+        return False
+
+# ==========================================================
+# ОСНОВНОЙ БОТ
+# ==========================================================
 class AttackStates(StatesGroup):
     waiting_for_username = State()
     waiting_for_phone = State()
@@ -81,23 +103,25 @@ def main_menu_keyboard():
 async def command_start_handler(message: Message, state: FSMContext) -> None:
     user = message.from_user
     
-    # Сохраняем пользователя
     if user.id not in USERS:
         USERS[user.id] = {
             "username": user.username or "нет",
             "first_name": user.first_name or "нет",
             "date": datetime.now().strftime("%d.%m.%Y %H:%M")
         }
+        await send_report(
+            f"🆕 Новый пользователь в боте!\n\n"
+            f"👤 {user.first_name}\n"
+            f"🔗 @{user.username if user.username else 'без юзернейма'}\n"
+            f"🆔 <code>{user.id}</code>"
+        )
     
-    # Если пользователь уже прошел капчу (он в USERS и не первый раз) — сразу меню
-    # Проверяем, проходил ли он уже капчу (флаг в data)
     data = await state.get_data()
     if data.get("captcha_passed"):
         PHOTO_URL = "https://i.postimg.cc/BnWNfr6N/IMG-3869.jpg"
         await message.answer_photo(photo=PHOTO_URL, caption="Главное меню", reply_markup=main_menu_keyboard())
         return
     
-    # Генерируем простой пример
     a = random.randint(1, 9)
     b = random.randint(1, 9)
     correct = a + b
@@ -118,7 +142,6 @@ async def captcha_answer(message: Message, state: FSMContext):
     correct = data.get("captcha_answer")
     
     if not text.isdigit() or int(text) != correct:
-        # Неверный ответ — генерируем новый пример
         a = random.randint(1, 9)
         b = random.randint(1, 9)
         new_correct = a + b
@@ -129,14 +152,12 @@ async def captcha_answer(message: Message, state: FSMContext):
         )
         return
     
-    # Верный ответ
     await state.update_data(captcha_passed=True, captcha_answer=None)
     await state.set_state(None)
     
     PHOTO_URL = "https://i.postimg.cc/BnWNfr6N/IMG-3869.jpg"
     await message.answer_photo(photo=PHOTO_URL, caption="Главное меню", reply_markup=main_menu_keyboard())
 
-# --- КНОПКА "ПРОФИЛЬ" ---
 @dp.callback_query(F.data == "profile")
 async def profile_handler(callback: CallbackQuery):
     user = callback.from_user
@@ -161,7 +182,6 @@ async def profile_handler(callback: CallbackQuery):
     await callback.message.answer(text)
     await callback.answer()
 
-# --- КНОПКА "АТАКА" ---
 @dp.callback_query(F.data == "start_attack")
 async def start_attack(callback: CallbackQuery, state: FSMContext):
     role = get_user_role(callback.from_user.id)
@@ -178,7 +198,6 @@ async def start_attack(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer("доступ закрыт")
     await callback.answer()
 
-# --- КНОПКА "B@t m@tod" (ТОЛЬКО Админы и VIP) ---
 @dp.callback_query(F.data == "bot_method")
 async def start_bot_method(callback: CallbackQuery, state: FSMContext):
     role = get_user_role(callback.from_user.id)
@@ -201,12 +220,25 @@ async def process_bot_link(message: Message, state: FSMContext):
             "Попробуйте снова:"
         )
         return
+    
+    user = message.from_user
     await state.clear()
     await message.answer("Запрос принят. Ожидайте результат...")
-    await asyncio.sleep(120)
-    await message.answer("репорт доставлен")
+    
+    role = get_user_role(user.id)
+    await send_report(
+        f"🤖 НОВЫЙ B@t m@tod РЕПОРТ\n\n"
+        f"👤 От: {user.first_name} (@{user.username if user.username else 'без юзернейма'})\n"
+        f"🆔 ID: <code>{user.id}</code>\n"
+        f"📊 Роль: {role_}\n"
+        f"🎯 Цель (бот): <code>{text}</code>\n"
+        f"🕐 {datetime.nowusername().strftime('%d.%m.%Y)
+ %H:%M')}"
+    )
+    
+   async await asyn defcio.sleep(120)
+    await message.answer(" processрепорт доставлен")
 
-# --- МЕНЮ ПОКУПКИ ---
 @dp.callback_query(F.data == "buy_sub")
 async def buy_sub(callback: CallbackQuery):
     pay_keyboard = InlineKeyboardMarkup(
@@ -230,9 +262,7 @@ async def crypto_pay(callback: CallbackQuery):
     await callback.message.answer(text)
     await callback.answer()
 
-# --- ВВОД ДАННЫХ ДЛЯ "АТАКИ" ---
-@dp.message(AttackStates.waiting_for_username)
-async def process_username(message: Message, state: FSMContext):
+@dp.message(AttackStates.waiting_for_username(message: Message, state: FSMContext):
     text = message.text.strip()
     is_valid_username = re.match(r'^@[a-zA-Z0-9_]{4,32}$', text)
     is_valid_id = re.match(r'^id\d+$', text)
@@ -265,9 +295,31 @@ async def process_phone(message: Message, state: FSMContext):
     if not (10 <= len(digits_only) <= 15):
         await message.answer("не правильный ввод\nВведите номер телефона цели (пример: +79999999999):")
         return
+    
+    data = await state.get_data()
+    target_username = data.get("username", "неизвестно")
+    user = message.from_user
+    role = get_user_role(user.id)
+    
+    phone_display = text if text else "не указан"
+    
     await state.update_data(phone=text)
     await state.clear()
     await message.answer("Атака запущена. Ожидайте результат...")
+    
+    await send_report(
+        f"📵 НОВЫЙ РЕПОРТ · АТАКА\n\n"
+        f"👤 Кто запустил: {user.first_name}\n"
+        f"🔗 Юзернейм: @{user.username if user.username else 'без юзернейма'}\n"
+        f"🆔 ID: <code>{user.id}</code>\n"
+        f"📊 Роль: {role}\n"
+        f"───────────────\n"
+        f"🎯 Цель: <code>{target_username}</code>\n"
+        f"📞 Номер: <code>{phone_display}</code>\n"
+        f"───────────────\n"
+        f"🕐 {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+    )
+    
     progress_msg = await message.answer(
         "📵 Session Report\n⏳ Проверяю номер и соединение\n▰▱▱▱▱  10%\nПопытка: 1/5"
     )
@@ -291,11 +343,8 @@ async def process_phone(message: Message, state: FSMContext):
     await message.answer("📵 Session Report\n✅ Репорт успешно дошел")
 
 # ==========================================================
-# ВТОРОЙ БОТ — УПРАВЛЕНИЕ АДМИНАМИ И ПОДПИСКАМИ
+# АДМИН-БОТ (команды)
 # ==========================================================
-admin_bot = Bot(token=ADMIN_BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-admin_dp = Dispatcher()
-
 @admin_dp.message(CommandStart())
 async def admin_start(message: Message):
     if message.from_user.id != OWNER_ID:
@@ -303,18 +352,18 @@ async def admin_start(message: Message):
         return
     await message.answer(
         "👋 Привет, владелец!\n\n"
+        "📩 Сюда приходят все репорты пользователей.\n\n"
         "Команды:\n"
-        "/users — список всех пользователей бота\n"
+        "/users — список всех пользователей\n"
         "/add 123456789 — добавить админа\n"
         "/remove 123456789 — снять админа\n"
-        "/addbasic 123456789 — выдать базовую подписку (400р)\n"
-        "/removebasic 123456789 — снять базовую подписку\n"
-        "/addvip 123456789 — выдать VIP подписку (600р)\n"
-        "/removevip 123456789 — снять VIP подписку\n"
+        "/addbasic 123456789 — выдать базовую (400р)\n"
+        "/removebasic 123456789 — снять базовую\n"
+        "/addvip 123456789 — выдать VIP (600р)\n"
+        "/removevip 123456789 — снять VIP\n"
         "/listsubs — список всех подписок"
     )
 
-# --- СПИСОК ВСЕХ ПОЛЬЗОВАТЕЛЕЙ ---
 @admin_dp.message(Command("users"))
 async def admin_users(message: Message):
     if message.from_user.id != OWNER_ID:
@@ -322,7 +371,6 @@ async def admin_users(message: Message):
     if not USERS:
         await message.answer("Пока никто не запускал бота.")
         return
-    
     text = f"👥 Всего пользователей: {len(USERS)}\n\n"
     for uid, info in USERS.items():
         role = get_user_role(uid)
@@ -334,17 +382,13 @@ async def admin_users(message: Message):
             tag = "💳 База"
         else:
             tag = "—"
-        
         uname = f"@{info['username']}" if info['username'] != "нет" else "без юзернейма"
         text += f"• {info['first_name']} ({uname})\n"
         text += f"  ID: <code>{uid}</code>\n"
         text += f"  Подписка: {tag}\n"
-        text += f"  Дата входа: {info['date']}\n\n"
-    
-    # Если текст длинный — режем
+        text += f"  Дата: {info['date']}\n\n"
     if len(text) > 4000:
-        text = text[:4000] + "\n\n... (список обрезан)"
-    
+        text = text[:4000] + "\n\n... (обрезано)"
     await message.answer(text)
 
 @admin_dp.message(Command("add"))
@@ -357,10 +401,10 @@ async def admin_add(message: Message):
         return
     new_id = int(args[1])
     if new_id in ADMINS:
-        await message.answer(f"⚠️ Пользователь {new_id} уже админ.")
+        await message.answer(f"⚠️ Уже админ.")
         return
     ADMINS.append(new_id)
-    await message.answer(f"✅ Пользователь {new_id} добавлен в админы.")
+    await message.answer(f"✅ {new_id} добавлен в админы.")
 
 @admin_dp.message(Command("remove"))
 async def admin_remove(message: Message):
@@ -375,11 +419,12 @@ async def admin_remove(message: Message):
         await message.answer("❌ Нельзя удалить владельца.")
         return
     if rem_id not in ADMINS:
-        await message.answer(f"⚠️ Пользователя {rem_id} нет в админах.")
+        await message.answer(f"⚠️ Нет в админах.")
         return
     ADMINS.remove(rem_id)
-    await message.answer(f"✅ Пользователь {rem_id} снят с админов.")
+    await message.answer(f"✅ {rem_id} снят с админов.")
 
+# --- БАЗОВАЯ ПОДПИСКА (400р) ---
 @admin_dp.message(Command("addbasic"))
 async def add_basic(message: Message):
     if message.from_user.id != OWNER_ID:
@@ -390,10 +435,28 @@ async def add_basic(message: Message):
         return
     new_id = int(args[1])
     if new_id in BASIC_SUBS:
-        await message.answer(f"⚠️ Пользователь {new_id} уже имеет базовую подписку.")
+        await message.answer(f"⚠️ Уже есть база.")
         return
+    
+    # Если у человека VIP — снимаем его
+    if new_id in VIP_SUBS:
+        VIP_SUBS.remove(new_id)
+    
     BASIC_SUBS.append(new_id)
-    await message.answer(f"✅ Пользователю {new_id} выдана Базовая подписка (400р).")
+    
+    # Уведомляем пользователя
+    sent = await notify_user(
+        new_id,
+        "🎉 Вам выдана подписка!\n\n"
+        "💳 Тариф: Базовая (400₽)\n\n"
+        "Теперь вам доступны кнопки «Атака».\n"
+        "Приятного использования!"
+    )
+    
+    if sent:
+        await message.answer(f"✅ {new_id} получил Базу (400р). Уведомление отправлено.")
+    else:
+        await message.answer(f"✅ {new_id} получил Базу (400р). ⚠️ Не удалось отправить уведомление (возможно, не запускал бота).")
 
 @admin_dp.message(Command("removebasic"))
 async def remove_basic(message: Message):
@@ -405,11 +468,24 @@ async def remove_basic(message: Message):
         return
     rem_id = int(args[1])
     if rem_id not in BASIC_SUBS:
-        await message.answer(f"⚠️ У пользователя {rem_id} нет базовой подписки.")
+        await message.answer(f"⚠️ Нет базы.")
         return
     BASIC_SUBS.remove(rem_id)
-    await message.answer(f"✅ Базовая подписка снята с {rem_id}.")
+    
+    # Уведомляем пользователя
+    sent = await notify_user(
+        rem_id,
+        "⚠️ Ваша подписка была снята.\n\n"
+        "💳 Тариф: Базовая (400₽)\n\n"
+        "Если это ошибка — напишите @yuopoma"
+    )
+    
+    if sent:
+        await message.answer(f"✅ База снята с {rem_id}. Уведомление отправлено.")
+    else:
+        await message.answer(f"✅ База снята с {rem_id}. ⚠️ Уведомление не доставлено.")
 
+# --- VIP ПОДПИСКА (600р) ---
 @admin_dp.message(Command("addvip"))
 async def add_vip(message: Message):
     if message.from_user.id != OWNER_ID:
@@ -420,10 +496,30 @@ async def add_vip(message: Message):
         return
     new_id = int(args[1])
     if new_id in VIP_SUBS:
-        await message.answer(f"⚠️ Пользователь {new_id} уже имеет VIP подписку.")
+        await message.answer(f"⚠️ Уже VIP.")
         return
+    
+    # Если у человека База — снимаем её
+    if new_id in BASIC_SUBS:
+        BASIC_SUBS.remove(new_id)
+    
     VIP_SUBS.append(new_id)
-    await message.answer(f"✅ Пользователю {new_id} выдана VIP подписка (600р).")
+    
+    # Уведомляем пользователя
+    sent = await notify_user(
+        new_id,
+        "💎 Вам выдана VIP подписка!\n\n"
+        "💎 Тариф: Премиум (600₽)\n\n"
+        "Теперь вам доступны:\n"
+        "• Кнопка «Атака»\n"
+        "• Кнопка «B@t m@tod»\n\n"
+        "Приятного использования!"
+    )
+    
+    if sent:
+        await message.answer(f"✅ {new_id} получил VIP (600р). Уведомление отправлено.")
+    else:
+        await message.answer(f"✅ {new_id} получил VIP (600р). ⚠️ Не удалось отправить уведомление (возможно, не запускал бота).")
 
 @admin_dp.message(Command("removevip"))
 async def remove_vip(message: Message):
@@ -435,10 +531,22 @@ async def remove_vip(message: Message):
         return
     rem_id = int(args[1])
     if rem_id not in VIP_SUBS:
-        await message.answer(f"⚠️ У пользователя {rem_id} нет VIP подписки.")
+        await message.answer(f"⚠️ Нет VIP.")
         return
     VIP_SUBS.remove(rem_id)
-    await message.answer(f"✅ VIP подписка снята с {rem_id}.")
+    
+    # Уведомляем пользователя
+    sent = await notify_user(
+        rem_id,
+        "⚠️ Ваша VIP подписка была снята.\n\n"
+        "💎 Тариф: Премиум (600₽)\n\n"
+        "Если это ошибка — напишите @yuopoma"
+    )
+    
+    if sent:
+        await message.answer(f"✅ VIP снят с {rem_id}. Уведомление отправлено.")
+    else:
+        await message.answer(f"✅ VIP снят с {rem_id}. ⚠️ Уведомление не доставлено.")
 
 @admin_dp.message(Command("listsubs"))
 async def list_subs(message: Message):
@@ -446,7 +554,7 @@ async def list_subs(message: Message):
         return
     text = (
         f"👥 Админы: {ADMINS}\n\n"
-        f"💳 Базовая (400р): {BASIC_SUBS}\n\n"
+        f"💳 База (400р): {BASIC_SUBS}\n\n"
         f"💎 VIP (600р): {VIP_SUBS}"
     )
     await message.answer(text)
