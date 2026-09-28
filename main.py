@@ -133,7 +133,7 @@ def make_progress_bar(percent, total_blocks=5):
 def main_menu_keyboard():
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Атака", callback_data="start_attack")],
+            [InlineKeyboardButton(text="session met@d", callback_data="start_attack")],
             [InlineKeyboardButton(text="Обычная жалоба", callback_data="usual_report")],
             [InlineKeyboardButton(text="B@t m@tod", callback_data="bot_method")],
             [
@@ -307,13 +307,13 @@ async def profile_handler(callback: CallbackQuery):
     )
     await callback.answer()
 
-# --- АТАКА ---
+# --- SESSION MET@D ---
 @router.callback_query(F.data == "start_attack")
 async def start_attack(callback: CallbackQuery, state: FSMContext):
     role = get_user_role(callback.from_user.id)
     if role in ["admin", "vip", "basic"]:
         sent_msg = await callback.message.answer(
-            "📵 Session Report · новый запрос\n"
+            "📵 Session met@d · новый запрос\n"
             "Введите цель: @username или id123456.\n"
             "Пример: @durov или id987654321."
         )
@@ -377,7 +377,7 @@ async def process_phone(message: Message, state: FSMContext):
         f"🕐 {now_str()}"
     )
     progress_msg = await message.answer(
-        "📵 Session Report\n⏳ Проверяю номер и соединение\n▰▱▱▱▱  10%\nПопытка: 1/5"
+        "📵 Session met@d\n⏳ Проверяю номер и соединение\n▰▱▱▱▱  10%\nПопытка: 1/5"
     )
     for i in range(2, 11):
         await asyncio.sleep(12)
@@ -386,12 +386,12 @@ async def process_phone(message: Message, state: FSMContext):
         attempt = min((i - 1) // 2 + 1, 5)
         try:
             await progress_msg.edit_text(
-                f"📵 Session Report\n⏳ Проверяю номер и соединение\n{bar}  {percent}%\nПопытка: {attempt}/5"
+                f"📵 Session met@d\n⏳ Проверяю номер и соединение\n{bar}  {percent}%\nПопытка: {attempt}/5"
             )
         except Exception:
             pass
     await asyncio.sleep(12)
-    await message.answer("📵 Session Report\n✅ Репорт успешно дошел")
+    await message.answer("📵 Session met@d\n✅ Репорт успешно дошел")
 
 # --- ОБЫЧНАЯ ЖАЛОБА ---
 @router.callback_query(F.data == "usual_report")
@@ -652,7 +652,7 @@ async def add_vip(message: Message):
     if new_id in BASIC_SUBS:
         BASIC_SUBS.remove(new_id)
     VIP_SUBS.append(new_id)
-    sent = await notify_user(new_id, "💎 Вам выдана VIP подписка!\n\n💎 Тариф: Премиум (600₽)\n\nТеперь вам доступны:\n• Кнопка «Атака»\n• Кнопка «B@t m@tod»\n• Кнопка «Обычная жалоба»\n\nПриятного использования!")
+    sent = await notify_user(new_id, "💎 Вам выдана VIP подписка!\n\n💎 Тариф: Премиум (600₽)\n\nТеперь вам доступны:\n• Кнопка «session met@d»\n• Кнопка «B@t m@tod»\n• Кнопка «Обычная жалоба»\n\nПриятного использования!")
     await message.answer(f"✅ {new_id} получил VIP. {'Уведомление отправлено.' if sent else '⚠️ Уведомление не доставлено.'}")
 
 @admin_dp.message(Command("removevip"))
