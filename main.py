@@ -15,7 +15,7 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, C
 # ==========================================================
 # 1. ТОКЕНЫ
 # ==========================================================
-BOT_TOKEN = "8624162572:AAHfUBS0EDdZHb6MrDVzlOQ5mV6Ilfa_gqw"
+BOT_TOKEN = "8898824168:AAE6xJm-636BSaZBzecynzLBFGUk7bPN9DA"
 ADMIN_BOT_TOKEN = "8099293642:AAHZvzUMVG-b_E2sxmFbhD7KOCYSlihRWD8"
 CRYPTO_BOT_TOKEN = "639798:AAGb7dpGUGE4JKYjxbEWuXzNOhJwMzsrdod"
 
