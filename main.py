@@ -17,6 +17,7 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, C
 # ==========================================================
 BOT_TOKEN = "8624162572:AAHfUBS0EDdZHb6MrDVzlOQ5mV6Ilfa_gqw"
 ADMIN_BOT_TOKEN = "8099293642:AAHZvzUMVG-b_E2sxmFbhD7KOCYSlihRWD8"
+CRYPTO_BOT_TOKEN = "639798:AAGb7dpGUGE4JKYjxbEWuXzNOhJwMzsrdod"
 
 # ==========================================================
 # 2. ГЛАВНЫЙ АДМИН
@@ -434,12 +435,26 @@ async def buy_sub(callback: CallbackQuery):
 
 @router.callback_query(F.data == "crypto_pay")
 async def crypto_pay(callback: CallbackQuery):
-    await callback.message.answer(
-        "Оплата криптой:\n\n"
-        "Адрес кошелька:\n"
-        "<code>UQBM7eVXH48ATH6S7Jb_MDECQiveaoWN-UdGsXAi47XN2oVD</code>\n\n"
-        "после оплаты напишите @yuopoma"
-    )
+    try:
+        crypto_bot = Bot(token=CRYPTO_BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+        me = await crypto_bot.get_me()
+        bot_username = me.username
+        await crypto_bot.session.close()
+    except Exception:
+        bot_username = None
+
+    if bot_username:
+        await callback.message.answer(
+            "💎 Оплата криптой\n\n"
+            "Нажмите кнопку ниже, чтобы перейти в бота для оплаты:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="Перейти к оплате", url=f"https://t.me/{bot_username}")]
+            ])
+        )
+    else:
+        await callback.message.answer(
+            "❌ Не удалось получить ссылку на крипто-бот. Попробуйте позже."
+        )
     await callback.answer()
 
 # ==========================================================
