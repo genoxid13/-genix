@@ -68,7 +68,7 @@ async def command_start_handler(message: Message) -> None:
             ]
         ]
     )
-    PHOTO_URL = "https://i.postimg.cc/BnWNfr6N/IMG-3869.jpg"
+    PHOTO_URL = "https://i.postimg.cc/pdG4tPSh/IMG-3660.jpg"
     await message.answer_photo(photo=PHOTO_URL, caption="Главное меню", reply_markup=keyboard)
 
 # --- КНОПКА "АТАКА" (Админы, VIP, Базовая) ---
