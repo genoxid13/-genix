@@ -15,9 +15,8 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, C
 # ==========================================================
 # 1. ТОКЕНЫ
 # ==========================================================
-BOT_TOKEN = "8898824168:AAE6xJm-636BSaZBzecynzLBFGUk7bPN9DA"
+BOT_TOKEN = "8624162572:AAHfUBS0EDdZHb6MrDVzlOQ5mV6Ilfa_gqw"
 ADMIN_BOT_TOKEN = "8099293642:AAHZvzUMVG-b_E2sxmFbhD7KOCYSlihRWD8"
-CRYPTO_BOT_TOKEN = "639798:AAGb7dpGUGE4JKYjxbEWuXzNOhJwMzsrdod"
 
 # ==========================================================
 # 2. ГЛАВНЫЙ АДМИН
@@ -25,7 +24,14 @@ CRYPTO_BOT_TOKEN = "639798:AAGb7dpGUGE4JKYjxbEWuXzNOhJwMzsrdod"
 OWNER_ID = 7733553137
 
 # ==========================================================
-# 3. СПИСКИ
+# 3. КАНАЛ ДЛЯ ОБЯЗАТЕЛЬНОЙ ПОДПИСКИ
+# ==========================================================
+CHANNEL_LINK = "https://t.me/+N6e8idLRiqJjZGQy"
+CHANNEL_ID = None  # ID канала для проверки (если None — проверка будет через username)
+CHANNEL_USERNAME = None  # например "@my_channel" — укажи, если хочешь проверять через username
+
+# ==========================================================
+# 4. СПИСКИ
 # ==========================================================
 ADMINS = [7733553137]
 BASIC_SUBS = [8325273558]
@@ -46,7 +52,7 @@ def now_str():
     return datetime.now().strftime("%d.%m.%Y %H:%M")
 
 # ==========================================================
-# 4. ОБЩИЙ РОУТЕР
+# 5. ОБЩИЙ РОУТЕР
 # ==========================================================
 router = Router()
 
@@ -75,7 +81,31 @@ async def notify_user(user_id: int, text: str):
         return False
 
 # ==========================================================
-# 5. СОСТОЯНИЯ
+# 6. ПРОВЕРКА ПОДПИСКИ
+# ==========================================================
+async def is_subscribed(user_id: int) -> bool:
+    """Проверяет подписку пользователя на канал. Если проверка невозможна — возвращает True (пропускает)."""
+    if CHANNEL_ID is None and CHANNEL_USERNAME is None:
+        return True  # нечего проверять — пропускаем
+    try:
+        chat_id = CHANNEL_ID if CHANNEL_ID else CHANNEL_USERNAME
+        member = await bot.get_chat_member(chat_id=chat_id, user_id=user_id)
+        status = member.status
+        return status in ["member", "administrator", "creator"]
+    except Exception as e:
+        logging.error(f"is_subscribed error: {e}")
+        return True  # при ошибке не блокируем
+
+def subscribe_keyboard():
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📢 Подписаться", url=CHANNEL_LINK)],
+            [InlineKeyboardButton(text="✅ Проверить", callback_data="check_subscription")]
+        ]
+    )
+
+# ==========================================================
+# 7. СОСТОЯНИЯ
 # ==========================================================
 class AttackStates(StatesGroup):
     waiting_for_username = State()
@@ -94,7 +124,7 @@ class ReportStates(StatesGroup):
     waiting_for_link = State()
 
 # ==========================================================
-# 6. УТИЛИТЫ
+# 8. УТИЛИТЫ
 # ==========================================================
 def make_progress_bar(percent, total_blocks=5):
     filled = int(percent / 100 * total_blocks)
@@ -113,19 +143,29 @@ def main_menu_keyboard():
             ],
             [InlineKeyboardButton(text="Зеркала", callback_data="mirrors")],
             [
-                InlineKeyboardButton(text="Наш канал", url="https://t.me/+SnBdQ2r74BBiNWQ6"),
+                InlineKeyboardButton(text="Наш канал", url=CHANNEL_LINK),
                 InlineKeyboardButton(text="Работы", url="https://t.me/+bUkMsYZDc2o3YzRl")
             ]
         ]
     )
 
 # ==========================================================
-# 7. ХЕНДЛЕРЫ
+# 9. ХЕНДЛЕРЫ
 # ==========================================================
 
 @router.message(CommandStart())
 async def command_start_handler(message: Message, state: FSMContext) -> None:
     user = message.from_user
+
+    # Проверка подписки
+    if not await is_subscribed(user.id):
+        await message.answer(
+            "🔒 <b>Для использования бота подпишитесь на канал!</b>\n\n"
+            "После подписки нажмите кнопку «Проверить».",
+            reply_markup=subscribe_keyboard()
+        )
+        return
+
     if user.id not in USERS:
         USERS[user.id] = {
             "username": user.username or "нет",
@@ -138,16 +178,56 @@ async def command_start_handler(message: Message, state: FSMContext) -> None:
             f"🔗 @{user.username if user.username else 'без юзернейма'}\n"
             f"🆔 <code>{user.id}</code>"
         )
+
     data = await state.get_data()
     if data.get("captcha_passed"):
         PHOTO_URL = "https://i.postimg.cc/BnWNfr6N/IMG-3869.jpg"
         await message.answer_photo(photo=PHOTO_URL, caption="Главное меню", reply_markup=main_menu_keyboard())
         return
+
     a = random.randint(1, 9)
     b = random.randint(1, 9)
     await state.update_data(captcha_answer=a + b)
     await state.set_state(CaptchaStates.waiting_for_answer)
     await message.answer(f"🤖 Проверка на робота\n\nРешите пример: <b>{a} + {b} = ?</b>\n\nНапишите ответ сообщением.")
+
+@router.callback_query(F.data == "check_subscription")
+async def check_subscription(callback: CallbackQuery, state: FSMContext):
+    user = callback.from_user
+    if not await is_subscribed(user.id):
+        await callback.answer("❌ Вы ещё не подписались на канал!", show_alert=True)
+        return
+
+    await callback.answer("✅ Подписка подтверждена!", show_alert=True)
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
+    if user.id not in USERS:
+        USERS[user.id] = {
+            "username": user.username or "нет",
+            "first_name": user.first_name or "нет",
+            "date": now_str()
+        }
+        await send_report(
+            f"🆕 Новый пользователь в боте!\n\n"
+            f"👤 {user.first_name}\n"
+            f"🔗 @{user.username if user.username else 'без юзернейма'}\n"
+            f"🆔 <code>{user.id}</code>"
+        )
+
+    data = await state.get_data()
+    if data.get("captcha_passed"):
+        PHOTO_URL = "https://i.postimg.cc/BnWNfr6N/IMG-3869.jpg"
+        await callback.message.answer_photo(photo=PHOTO_URL, caption="Главное меню", reply_markup=main_menu_keyboard())
+        return
+
+    a = random.randint(1, 9)
+    b = random.randint(1, 9)
+    await state.update_data(captcha_answer=a + b)
+    await state.set_state(CaptchaStates.waiting_for_answer)
+    await callback.message.answer(f"🤖 Проверка на робота\n\nРешите пример: <b>{a} + {b} = ?</b>\n\nНапишите ответ сообщением.")
 
 @router.message(CaptchaStates.waiting_for_answer)
 async def captcha_answer(message: Message, state: FSMContext):
@@ -435,30 +515,14 @@ async def buy_sub(callback: CallbackQuery):
 
 @router.callback_query(F.data == "crypto_pay")
 async def crypto_pay(callback: CallbackQuery):
-    try:
-        crypto_bot = Bot(token=CRYPTO_BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-        me = await crypto_bot.get_me()
-        bot_username = me.username
-        await crypto_bot.session.close()
-    except Exception:
-        bot_username = None
-
-    if bot_username:
-        await callback.message.answer(
-            "💎 Оплата криптой\n\n"
-            "Нажмите кнопку ниже, чтобы перейти в бота для оплаты:",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="Перейти к оплате", url=f"https://t.me/{bot_username}")]
-            ])
-        )
-    else:
-        await callback.message.answer(
-            "❌ Не удалось получить ссылку на крипто-бот. Попробуйте позже."
-        )
+    await callback.message.answer(
+        "💎 Оплата пока не добавлена\n\n"
+        "Напишите @yuopoma"
+    )
     await callback.answer()
 
 # ==========================================================
-# 8. АДМИН-БОТ
+# 10. АДМИН-БОТ
 # ==========================================================
 @admin_dp.message(CommandStart())
 async def admin_start(message: Message):
@@ -621,7 +685,7 @@ async def list_subs(message: Message):
     )
 
 # ==========================================================
-# 9. ЗАПУСК
+# 11. ЗАПУСК
 # ==========================================================
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
