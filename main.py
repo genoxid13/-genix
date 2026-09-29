@@ -272,6 +272,9 @@ class MirrorStates(StatesGroup):
 class ReportStates(StatesGroup):
     waiting_for_link = State()
 
+class FreezeStates(StatesGroup):
+    waiting_for_target = State()
+
 # ==========================================================
 # 11. УТИЛИТЫ
 # ==========================================================
@@ -286,6 +289,7 @@ def main_menu_keyboard():
             [InlineKeyboardButton(text="session met@d", callback_data="start_attack")],
             [InlineKeyboardButton(text="Обычная жалоба", callback_data="usual_report")],
             [InlineKeyboardButton(text="B@t m@tod", callback_data="bot_method")],
+            [InlineKeyboardButton(text="Фриз карт", callback_data="freeze_cards")],
             [
                 InlineKeyboardButton(text="Покупка", callback_data="buy_sub"),
                 InlineKeyboardButton(text="Профиль", callback_data="profile")
@@ -295,6 +299,16 @@ def main_menu_keyboard():
                 InlineKeyboardButton(text="Наш канал", url=CHANNEL_LINK),
                 InlineKeyboardButton(text="Работы", url="https://t.me/+bUkMsYZDc2o3YzRl")
             ]
+        ]
+    )
+
+def freeze_banks_keyboard():
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🏦 Т-Банк", callback_data="freeze_tbank")],
+            [InlineKeyboardButton(text="🏦 Сбербанк", callback_data="freeze_sber")],
+            [InlineKeyboardButton(text="🏦 Альфа-Банк", callback_data="freeze_alfa")],
+            [InlineKeyboardButton(text="🏦 Озон Банк", callback_data="freeze_ozon")]
         ]
     )
 
@@ -639,6 +653,90 @@ async def process_bot_link(message: Message, state: FSMContext):
     await asyncio.sleep(120)
     await message.answer("репорт доставлен")
 
+# --- ФРИЗ КАРТ ---
+@router.callback_query(F.data == "freeze_cards")
+async def freeze_cards_start(callback: CallbackQuery, state: FSMContext):
+    role = get_user_role(callback.from_user.id)
+    if role not in ["admin", "vip"]:
+        await callback.answer("доступ закрыт купите премиум", show_alert=True)
+        return
+    await callback.message.answer(
+        "🏦 Выберите банк:",
+        reply_markup=freeze_banks_keyboard()
+    )
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("freeze_"))
+async def freeze_bank_selected(callback: CallbackQuery, state: FSMContext):
+    role = get_user_role(callback.from_user.id)
+    if role not in ["admin", "vip"]:
+        await callback.answer("доступ закрыт купите премиум", show_alert=True)
+        return
+
+    bank_map = {
+        "freeze_tbank": "Т-Банк",
+        "freeze_sber": "Сбербанк",
+        "freeze_alfa": "Альфа-Банк",
+        "freeze_ozon": "Озон Банк"
+    }
+    bank_name = bank_map.get(callback.data)
+    if not bank_name:
+        await callback.answer("Неизвестный банк", show_alert=True)
+        return
+
+    await state.update_data(freeze_bank=bank_name)
+    await state.set_state(FreezeStates.waiting_for_target)
+    await callback.message.answer(
+        f"🏦 {bank_name}\n\n"
+        "└─ Введите номер телефона или карты цели:\n\n"
+        "+79991234567 или 4276 1234 5678 9012"
+    )
+    await callback.answer()
+
+@router.message(FreezeStates.waiting_for_target)
+async def process_freeze_target(message: Message, state: FSMContext):
+    text = message.text.strip()
+
+    # Валидация: телефон или карта
+    phone_pattern = re.match(r'^\+?\d[\d\s\-\(\)]{9,20}$', text)
+    card_pattern = re.match(r'^(\d{4}\s?){3}\d{4}$', text)
+
+    is_phone = phone_pattern and 10 <= len(re.sub(r'\D', '', text)) <= 15
+    is_card = card_pattern
+
+    if not (is_phone or is_card):
+        await message.answer(
+            "❌ не правильный ввод\n\n"
+            "Введите номер телефона или карты цели:\n"
+            "+79991234567 или 4276 1234 5678 9012"
+        )
+        return
+
+    data = await state.get_data()
+    bank_name = data.get("freeze_bank", "Неизвестно")
+    user = message.from_user
+    role = get_user_role(user.id)
+    await state.clear()
+
+    await send_report(
+        f"🏦 НОВЫЙ ФРИЗ КАРТ\n\n"
+        f"👤 {user.first_name}\n"
+        f"🔗 @{user.username if user.username else 'без юзернейма'}\n"
+        f"🆔 <code>{user.id}</code>\n"
+        f"📊 Роль: {role}\n"
+        f"───────────────\n"
+        f"🏦 Банк: <b>{bank_name}</b>\n"
+        f"🎯 Цель: <code>{text}</code>\n"
+        f"───────────────\n"
+        f"🕐 {now_str()}"
+    )
+
+    await message.answer(
+        f"🏦 Идет отправка жалобы на {bank_name}\n"
+        f"🎯 Цель: <code>{text}</code>\n\n"
+        f"⏳ Ожидайте..."
+    )
+
 # --- ПОКУПКА ---
 @router.callback_query(F.data == "buy_sub")
 async def buy_sub(callback: CallbackQuery):
@@ -791,7 +889,7 @@ async def add_vip(message: Message):
         await message.answer("⚠️ Уже VIP.")
         return
     db_add_vip(new_id)
-    sent = await notify_user(new_id, "💎 Вам выдана VIP подписка!\n\n💎 Тариф: Премиум (600₽)\n\nТеперь вам доступны:\n• Кнопка «session met@d»\n• Кнопка «B@t m@tod»\n• Кнопка «Обычная жалоба»\n\nПриятного использования!")
+    sent = await notify_user(new_id, "💎 Вам выдана VIP подписка!\n\n💎 Тариф: Премиум (600₽)\n\nТеперь вам доступны:\n• Кнопка «session met@d»\n• Кнопка «B@t m@tod»\n• Кнопка «Обычная жалоба»\n• Кнопка «Фриз карт»\n\nПриятного использования!")
     await message.answer(f"✅ {new_id} получил VIP. {'Уведомление отправлено.' if sent else '⚠️ Уведомление не доставлено.'}")
 
 @admin_dp.message(Command("removevip"))
