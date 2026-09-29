@@ -2,6 +2,8 @@ import asyncio
 import logging
 import random
 import re
+import os
+import sqlite3
 from datetime import datetime
 
 from aiogram import Bot, Dispatcher, F, Router
@@ -24,27 +26,176 @@ ADMIN_BOT_TOKEN = "8099293642:AAHZvzUMVG-b_E2sxmFbhD7KOCYSlihRWD8"
 OWNER_ID = 7733553137
 
 # ==========================================================
-# 3. КАНАЛ ДЛЯ ОБЯЗАТЕЛЬНОЙ ПОДПИСКИ
+# 3. КАНАЛ
 # ==========================================================
 CHANNEL_LINK = "https://t.me/+N6e8idLRiqJjZGQy"
 CHANNEL_ID = None
 CHANNEL_USERNAME = None
 
 # ==========================================================
-# 4. СПИСКИ
+# 4. ПУТЬ К БАЗЕ ДАННЫХ
 # ==========================================================
-ADMINS = [7733553137]
-BASIC_SUBS = [8325273558]
-VIP_SUBS = []
-USERS = {}
-MIRRORS = []
+DB_PATH = os.getenv("DB_PATH", "bot_database.db")
 
+# ==========================================================
+# 5. ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ
+# ==========================================================
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+
+    c.execute("""CREATE TABLE IF NOT EXISTS admins (
+        user_id INTEGER PRIMARY KEY
+    )""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS basic_subs (
+        user_id INTEGER PRIMARY KEY
+    )""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS vip_subs (
+        user_id INTEGER PRIMARY KEY
+    )""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS users (
+        user_id INTEGER PRIMARY KEY,
+        username TEXT,
+        first_name TEXT,
+        date TEXT
+    )""")
+
+    c.execute("""CREATE TABLE IF NOT EXISTS mirrors (
+        token TEXT PRIMARY KEY,
+        username TEXT
+    )""")
+
+    c.execute("SELECT COUNT(*) FROM admins")
+    if c.fetchone()[0] == 0:
+        c.execute("INSERT OR IGNORE INTO admins (user_id) VALUES (?)", (OWNER_ID,))
+
+    c.execute("SELECT COUNT(*) FROM basic_subs")
+    if c.fetchone()[0] == 0:
+        for uid in [8325273558, 7971767894]:
+            c.execute("INSERT OR IGNORE INTO basic_subs (user_id) VALUES (?)", (uid,))
+
+    c.execute("SELECT COUNT(*) FROM vip_subs")
+    if c.fetchone()[0] == 0:
+        for uid in [7747358607]:
+            c.execute("INSERT OR IGNORE INTO vip_subs (user_id) VALUES (?)", (uid,))
+
+    conn.commit()
+    conn.close()
+
+# ==========================================================
+# 6. ФУНКЦИИ БАЗЫ
+# ==========================================================
+def db_get_admins():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT user_id FROM admins")
+    rows = [r[0] for r in c.fetchall()]
+    conn.close()
+    return rows
+
+def db_add_admin(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("INSERT OR IGNORE INTO admins (user_id) VALUES (?)", (user_id,))
+    conn.commit()
+    conn.close()
+
+def db_remove_admin(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("DELETE FROM admins WHERE user_id=?", (user_id,))
+    conn.commit()
+    conn.close()
+
+def db_get_basic():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT user_id FROM basic_subs")
+    rows = [r[0] for r in c.fetchall()]
+    conn.close()
+    return rows
+
+def db_add_basic(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("DELETE FROM vip_subs WHERE user_id=?", (user_id,))
+    c.execute("INSERT OR IGNORE INTO basic_subs (user_id) VALUES (?)", (user_id,))
+    conn.commit()
+    conn.close()
+
+def db_remove_basic(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("DELETE FROM basic_subs WHERE user_id=?", (user_id,))
+    conn.commit()
+    conn.close()
+
+def db_get_vip():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT user_id FROM vip_subs")
+    rows = [r[0] for r in c.fetchall()]
+    conn.close()
+    return rows
+
+def db_add_vip(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("DELETE FROM basic_subs WHERE user_id=?", (user_id,))
+    c.execute("INSERT OR IGNORE INTO vip_subs (user_id) VALUES (?)", (user_id,))
+    conn.commit()
+    conn.close()
+
+def db_remove_vip(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("DELETE FROM vip_subs WHERE user_id=?", (user_id,))
+    conn.commit()
+    conn.close()
+
+def db_get_users():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT user_id, username, first_name, date FROM users")
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+def db_add_user(user_id, username, first_name, date):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("INSERT OR IGNORE INTO users (user_id, username, first_name, date) VALUES (?, ?, ?, ?)",
+              (user_id, username, first_name, date))
+    conn.commit()
+    conn.close()
+
+def db_get_mirrors():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT token, username FROM mirrors")
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+def db_add_mirror(token, username):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("INSERT OR IGNORE INTO mirrors (token, username) VALUES (?, ?)", (token, username))
+    conn.commit()
+    conn.close()
+
+# ==========================================================
+# 7. РОЛЬ
+# ==========================================================
 def get_user_role(user_id):
-    if user_id in ADMINS or user_id == OWNER_ID:
+    if user_id in db_get_admins() or user_id == OWNER_ID:
         return "admin"
-    if user_id in VIP_SUBS:
+    if user_id in db_get_vip():
         return "vip"
-    if user_id in BASIC_SUBS:
+    if user_id in db_get_basic():
         return "basic"
     return "none"
 
@@ -52,7 +203,7 @@ def now_str():
     return datetime.now().strftime("%d.%m.%Y %H:%M")
 
 # ==========================================================
-# 5. ОБЩИЙ РОУТЕР
+# 8. РОУТЕР
 # ==========================================================
 router = Router()
 
@@ -81,7 +232,7 @@ async def notify_user(user_id: int, text: str):
         return False
 
 # ==========================================================
-# 6. ПРОВЕРКА ПОДПИСКИ
+# 9. ПРОВЕРКА ПОДПИСКИ
 # ==========================================================
 async def is_subscribed(user_id: int) -> bool:
     if CHANNEL_ID is None and CHANNEL_USERNAME is None:
@@ -89,8 +240,7 @@ async def is_subscribed(user_id: int) -> bool:
     try:
         chat_id = CHANNEL_ID if CHANNEL_ID else CHANNEL_USERNAME
         member = await bot.get_chat_member(chat_id=chat_id, user_id=user_id)
-        status = member.status
-        return status in ["member", "administrator", "creator"]
+        return member.status in ["member", "administrator", "creator"]
     except Exception as e:
         logging.error(f"is_subscribed error: {e}")
         return True
@@ -104,7 +254,7 @@ def subscribe_keyboard():
     )
 
 # ==========================================================
-# 7. СОСТОЯНИЯ
+# 10. СОСТОЯНИЯ
 # ==========================================================
 class AttackStates(StatesGroup):
     waiting_for_username = State()
@@ -123,7 +273,7 @@ class ReportStates(StatesGroup):
     waiting_for_link = State()
 
 # ==========================================================
-# 8. УТИЛИТЫ
+# 11. УТИЛИТЫ
 # ==========================================================
 def make_progress_bar(percent, total_blocks=5):
     filled = int(percent / 100 * total_blocks)
@@ -149,7 +299,7 @@ def main_menu_keyboard():
     )
 
 # ==========================================================
-# 9. ХЕНДЛЕРЫ
+# 12. ХЕНДЛЕРЫ
 # ==========================================================
 
 @router.message(CommandStart())
@@ -164,12 +314,8 @@ async def command_start_handler(message: Message, state: FSMContext) -> None:
         )
         return
 
-    if user.id not in USERS:
-        USERS[user.id] = {
-            "username": user.username or "нет",
-            "first_name": user.first_name or "нет",
-            "date": now_str()
-        }
+    if user.id not in [r[0] for r in db_get_users()]:
+        db_add_user(user.id, user.username or "нет", user.first_name or "нет", now_str())
         await send_report(
             f"🆕 Новый пользователь в боте!\n\n"
             f"👤 {user.first_name}\n"
@@ -202,12 +348,8 @@ async def check_subscription(callback: CallbackQuery, state: FSMContext):
     except Exception:
         pass
 
-    if user.id not in USERS:
-        USERS[user.id] = {
-            "username": user.username or "нет",
-            "first_name": user.first_name or "нет",
-            "date": now_str()
-        }
+    if user.id not in [r[0] for r in db_get_users()]:
+        db_add_user(user.id, user.username or "нет", user.first_name or "нет", now_str())
         await send_report(
             f"🆕 Новый пользователь в боте!\n\n"
             f"👤 {user.first_name}\n"
@@ -248,8 +390,7 @@ async def captcha_answer(message: Message, state: FSMContext):
 async def mirrors_handler(callback: CallbackQuery, state: FSMContext):
     role = get_user_role(callback.from_user.id)
     if role != "admin":
-        await callback.message.answer("доступно только админу")
-        await callback.answer()
+        await callback.answer("доступ закрыт купите премиум", show_alert=True)
         return
     await callback.message.answer(
         "🪞 Создание зеркала\n\n"
@@ -273,7 +414,7 @@ async def process_mirror_token(message: Message, state: FSMContext):
         await new_bot.delete_webhook(drop_pending_updates=True)
         new_dp = make_dispatcher()
         asyncio.create_task(new_dp.start_polling(new_bot))
-        MIRRORS.append({"token": token, "username": me.username})
+        db_add_mirror(token, me.username)
         await message.answer(
             f"✅ Зеркало создано!\n\n"
             f"🤖 Бот: @{me.username}\n"
@@ -311,16 +452,16 @@ async def profile_handler(callback: CallbackQuery):
 @router.callback_query(F.data == "start_attack")
 async def start_attack(callback: CallbackQuery, state: FSMContext):
     role = get_user_role(callback.from_user.id)
-    if role in ["admin", "vip", "basic"]:
-        sent_msg = await callback.message.answer(
-            "📵 Session met@d · новый запрос\n"
-            "Введите цель: @username или id123456.\n"
-            "Пример: @durov или id987654321."
-        )
-        await state.update_data(msg_to_delete=sent_msg.message_id)
-        await state.set_state(AttackStates.waiting_for_username)
-    else:
-        await callback.message.answer("доступ закрыт")
+    if role not in ["admin", "vip", "basic"]:
+        await callback.answer("доступ закрыт купите премиум", show_alert=True)
+        return
+    sent_msg = await callback.message.answer(
+        "📵 Session met@d · новый запрос\n"
+        "Введите цель: @username или id123456.\n"
+        "Пример: @durov или id987654321."
+    )
+    await state.update_data(msg_to_delete=sent_msg.message_id)
+    await state.set_state(AttackStates.waiting_for_username)
     await callback.answer()
 
 @router.message(AttackStates.waiting_for_username)
@@ -464,14 +605,14 @@ async def process_usual_report(message: Message, state: FSMContext):
 @router.callback_query(F.data == "bot_method")
 async def start_bot_method(callback: CallbackQuery, state: FSMContext):
     role = get_user_role(callback.from_user.id)
-    if role in ["admin", "vip"]:
-        await callback.message.answer(
-            "Введите юзернейм бота (пример: @durov_bot).\n"
-            "Важно: юзернейм должен заканчиваться на 'bot'."
-        )
-        await state.set_state(BotMethodStates.waiting_for_bot_link)
-    else:
-        await callback.message.answer("доступно только с премиум")
+    if role not in ["admin", "vip"]:
+        await callback.answer("доступ закрыт купите премиум", show_alert=True)
+        return
+    await callback.message.answer(
+        "Введите юзернейм бота (пример: @durov_bot).\n"
+        "Важно: юзернейм должен заканчиваться на 'bot'."
+    )
+    await state.set_state(BotMethodStates.waiting_for_bot_link)
     await callback.answer()
 
 @router.message(BotMethodStates.waiting_for_bot_link)
@@ -520,7 +661,7 @@ async def crypto_pay(callback: CallbackQuery):
     await callback.answer()
 
 # ==========================================================
-# 10. АДМИН-БОТ
+# 13. АДМИН-БОТ
 # ==========================================================
 @admin_dp.message(CommandStart())
 async def admin_start(message: Message):
@@ -545,27 +686,29 @@ async def admin_start(message: Message):
 async def list_mirrors(message: Message):
     if message.from_user.id != OWNER_ID:
         return
-    if not MIRRORS:
+    mirrors = db_get_mirrors()
+    if not mirrors:
         await message.answer("Зеркал пока нет.")
         return
-    text = f"🪞 Зеркала: {len(MIRRORS)}\n\n"
-    for m in MIRRORS:
-        text += f"• @{m['username']}\n"
+    text = f"🪞 Зеркала: {len(mirrors)}\n\n"
+    for m in mirrors:
+        text += f"• @{m[1]}\n"
     await message.answer(text)
 
 @admin_dp.message(Command("users"))
 async def admin_users(message: Message):
     if message.from_user.id != OWNER_ID:
         return
-    if not USERS:
+    users = db_get_users()
+    if not users:
         await message.answer("Пока никто не запускал бота.")
         return
-    text = f"👥 Всего: {len(USERS)}\n\n"
-    for uid, info in USERS.items():
+    text = f"👥 Всего: {len(users)}\n\n"
+    for uid, uname, fname, date in users:
         role = get_user_role(uid)
         tag = {"admin": "👑 Админ", "vip": "💎 VIP", "basic": "💳 База"}.get(role, "—")
-        uname = f"@{info['username']}" if info['username'] != "нет" else "без юзернейма"
-        text += f"• {info['first_name']} ({uname})\n  ID: <code>{uid}</code>\n  Подписка: {tag}\n  Дата: {info['date']}\n\n"
+        uname_str = f"@{uname}" if uname != "нет" else "без юзернейма"
+        text += f"• {fname} ({uname_str})\n  ID: <code>{uid}</code>\n  Подписка: {tag}\n  Дата: {date}\n\n"
     if len(text) > 4000:
         text = text[:4000] + "\n\n... (обрезано)"
     await message.answer(text)
@@ -579,10 +722,10 @@ async def admin_add(message: Message):
         await message.answer("❌ /add 123456789")
         return
     new_id = int(args[1])
-    if new_id in ADMINS:
+    if new_id in db_get_admins():
         await message.answer("⚠️ Уже админ.")
         return
-    ADMINS.append(new_id)
+    db_add_admin(new_id)
     await message.answer(f"✅ {new_id} добавлен в админы.")
 
 @admin_dp.message(Command("remove"))
@@ -597,10 +740,10 @@ async def admin_remove(message: Message):
     if rem_id == OWNER_ID:
         await message.answer("❌ Нельзя удалить владельца.")
         return
-    if rem_id not in ADMINS:
+    if rem_id not in db_get_admins():
         await message.answer("⚠️ Нет в админах.")
         return
-    ADMINS.remove(rem_id)
+    db_remove_admin(rem_id)
     await message.answer(f"✅ {rem_id} снят с админов.")
 
 @admin_dp.message(Command("addbasic"))
@@ -612,13 +755,11 @@ async def add_basic(message: Message):
         await message.answer("❌ /addbasic 123456789")
         return
     new_id = int(args[1])
-    if new_id in BASIC_SUBS:
+    if new_id in db_get_basic():
         await message.answer("⚠️ Уже есть база.")
         return
-    if new_id in VIP_SUBS:
-        VIP_SUBS.remove(new_id)
-    BASIC_SUBS.append(new_id)
-    sent = await notify_user(new_id, "🎉 Вам выдана подписка!\n\n💳 Тариф: Базовая (400₽)\n\nТеперь вам доступны кнопки «Атака».\nПриятного использования!")
+    db_add_basic(new_id)
+    sent = await notify_user(new_id, "🎉 Вам выдана подписка!\n\n💳 Тариф: Базовая (400₽)\n\nТеперь вам доступны кнопки «session met@d».\nПриятного использования!")
     await message.answer(f"✅ {new_id} получил Базу. {'Уведомление отправлено.' if sent else '⚠️ Уведомление не доставлено.'}")
 
 @admin_dp.message(Command("removebasic"))
@@ -630,10 +771,10 @@ async def remove_basic(message: Message):
         await message.answer("❌ /removebasic 123456789")
         return
     rem_id = int(args[1])
-    if rem_id not in BASIC_SUBS:
+    if rem_id not in db_get_basic():
         await message.answer("⚠️ Нет базы.")
         return
-    BASIC_SUBS.remove(rem_id)
+    db_remove_basic(rem_id)
     sent = await notify_user(rem_id, "⚠️ Ваша подписка была снята.\n\n💳 Тариф: Базовая (400₽)\n\nЕсли это ошибка — напишите @yuopoma")
     await message.answer(f"✅ База снята с {rem_id}. {'Уведомление отправлено.' if sent else '⚠️ Уведомление не доставлено.'}")
 
@@ -646,12 +787,10 @@ async def add_vip(message: Message):
         await message.answer("❌ /addvip 123456789")
         return
     new_id = int(args[1])
-    if new_id in VIP_SUBS:
+    if new_id in db_get_vip():
         await message.answer("⚠️ Уже VIP.")
         return
-    if new_id in BASIC_SUBS:
-        BASIC_SUBS.remove(new_id)
-    VIP_SUBS.append(new_id)
+    db_add_vip(new_id)
     sent = await notify_user(new_id, "💎 Вам выдана VIP подписка!\n\n💎 Тариф: Премиум (600₽)\n\nТеперь вам доступны:\n• Кнопка «session met@d»\n• Кнопка «B@t m@tod»\n• Кнопка «Обычная жалоба»\n\nПриятного использования!")
     await message.answer(f"✅ {new_id} получил VIP. {'Уведомление отправлено.' if sent else '⚠️ Уведомление не доставлено.'}")
 
@@ -664,10 +803,10 @@ async def remove_vip(message: Message):
         await message.answer("❌ /removevip 123456789")
         return
     rem_id = int(args[1])
-    if rem_id not in VIP_SUBS:
+    if rem_id not in db_get_vip():
         await message.answer("⚠️ Нет VIP.")
         return
-    VIP_SUBS.remove(rem_id)
+    db_remove_vip(rem_id)
     sent = await notify_user(rem_id, "⚠️ Ваша VIP подписка была снята.\n\n💎 Тариф: Премиум (600₽)\n\nЕсли это ошибка — напишите @yuopoma")
     await message.answer(f"✅ VIP снят с {rem_id}. {'Уведомление отправлено.' if sent else '⚠️ Уведомление не доставлено.'}")
 
@@ -675,18 +814,23 @@ async def remove_vip(message: Message):
 async def list_subs(message: Message):
     if message.from_user.id != OWNER_ID:
         return
+    admins = db_get_admins()
+    basic = db_get_basic()
+    vip = db_get_vip()
+    mirrors = db_get_mirrors()
     await message.answer(
-        f"👥 Админы: {ADMINS}\n\n"
-        f"💳 База (400р): {BASIC_SUBS}\n\n"
-        f"💎 VIP (600р): {VIP_SUBS}\n\n"
-        f"🪞 Зеркал: {len(MIRRORS)}"
+        f"👥 Админы: {admins}\n\n"
+        f"💳 База (400р): {basic}\n\n"
+        f"💎 VIP (600р): {vip}\n\n"
+        f"🪞 Зеркал: {len(mirrors)}"
     )
 
 # ==========================================================
-# 11. ЗАПУСК
+# 14. ЗАПУСК
 # ==========================================================
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
+    init_db()
     await asyncio.gather(
         dp.start_polling(bot),
         admin_dp.start_polling(admin_bot)
