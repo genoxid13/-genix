@@ -4,6 +4,7 @@ import random
 import re
 import os
 import sqlite3
+import time
 from datetime import datetime
 
 from aiogram import Bot, Dispatcher, F, Router
@@ -29,43 +30,42 @@ OWNER_ID = 7733553137
 # 3. КАНАЛ
 # ==========================================================
 CHANNEL_LINK = "https://t.me/+N6e8idLRiqJjZGQy"
-CHANNEL_ID = None
-CHANNEL_USERNAME = None
+CHANNEL_ID = -1003718500868
 
 # ==========================================================
-# 4. ПУТЬ К БАЗЕ ДАННЫХ
+# 4. КУЛДАУНЫ (в секундах)
+# ==========================================================
+COOLDOWN_SESSION = 15 * 60        # 15 минут
+COOLDOWN_BOT = 10 * 60            # 10 минут
+COOLDOWN_REPORT = 15 * 60         # 15 минут
+COOLDOWN_FREEZE = 12 * 60 * 60    # 12 часов
+
+# ==========================================================
+# 5. БАЗА ДАННЫХ
 # ==========================================================
 DB_PATH = os.getenv("DB_PATH", "bot_database.db")
 
-# ==========================================================
-# 5. ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ
-# ==========================================================
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-
-    c.execute("""CREATE TABLE IF NOT EXISTS admins (
-        user_id INTEGER PRIMARY KEY
-    )""")
-
-    c.execute("""CREATE TABLE IF NOT EXISTS basic_subs (
-        user_id INTEGER PRIMARY KEY
-    )""")
-
-    c.execute("""CREATE TABLE IF NOT EXISTS vip_subs (
-        user_id INTEGER PRIMARY KEY
-    )""")
-
+    c.execute("""CREATE TABLE IF NOT EXISTS admins (user_id INTEGER PRIMARY KEY)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS basic_subs (user_id INTEGER PRIMARY KEY)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS vip_subs (user_id INTEGER PRIMARY KEY)""")
     c.execute("""CREATE TABLE IF NOT EXISTS users (
         user_id INTEGER PRIMARY KEY,
         username TEXT,
         first_name TEXT,
         date TEXT
     )""")
-
     c.execute("""CREATE TABLE IF NOT EXISTS mirrors (
         token TEXT PRIMARY KEY,
         username TEXT
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS cooldowns (
+        user_id INTEGER,
+        action TEXT,
+        last_time REAL,
+        PRIMARY KEY (user_id, action)
     )""")
 
     c.execute("SELECT COUNT(*) FROM admins")
@@ -85,110 +85,111 @@ def init_db():
     conn.commit()
     conn.close()
 
-# ==========================================================
-# 6. ФУНКЦИИ БАЗЫ
-# ==========================================================
 def db_get_admins():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT user_id FROM admins")
-    rows = [r[0] for r in c.fetchall()]
-    conn.close()
-    return rows
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT user_id FROM admins"); r = [x[0] for x in c.fetchall()]
+    conn.close(); return r
 
-def db_add_admin(user_id):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("INSERT OR IGNORE INTO admins (user_id) VALUES (?)", (user_id,))
-    conn.commit()
-    conn.close()
+def db_add_admin(uid):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("INSERT OR IGNORE INTO admins (user_id) VALUES (?)", (uid,))
+    conn.commit(); conn.close()
 
-def db_remove_admin(user_id):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("DELETE FROM admins WHERE user_id=?", (user_id,))
-    conn.commit()
-    conn.close()
+def db_remove_admin(uid):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("DELETE FROM admins WHERE user_id=?", (uid,))
+    conn.commit(); conn.close()
 
 def db_get_basic():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT user_id FROM basic_subs")
-    rows = [r[0] for r in c.fetchall()]
-    conn.close()
-    return rows
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT user_id FROM basic_subs"); r = [x[0] for x in c.fetchall()]
+    conn.close(); return r
 
-def db_add_basic(user_id):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("DELETE FROM vip_subs WHERE user_id=?", (user_id,))
-    c.execute("INSERT OR IGNORE INTO basic_subs (user_id) VALUES (?)", (user_id,))
-    conn.commit()
-    conn.close()
+def db_add_basic(uid):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("DELETE FROM vip_subs WHERE user_id=?", (uid,))
+    c.execute("INSERT OR IGNORE INTO basic_subs (user_id) VALUES (?)", (uid,))
+    conn.commit(); conn.close()
 
-def db_remove_basic(user_id):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("DELETE FROM basic_subs WHERE user_id=?", (user_id,))
-    conn.commit()
-    conn.close()
+def db_remove_basic(uid):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("DELETE FROM basic_subs WHERE user_id=?", (uid,))
+    conn.commit(); conn.close()
 
 def db_get_vip():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT user_id FROM vip_subs")
-    rows = [r[0] for r in c.fetchall()]
-    conn.close()
-    return rows
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT user_id FROM vip_subs"); r = [x[0] for x in c.fetchall()]
+    conn.close(); return r
 
-def db_add_vip(user_id):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("DELETE FROM basic_subs WHERE user_id=?", (user_id,))
-    c.execute("INSERT OR IGNORE INTO vip_subs (user_id) VALUES (?)", (user_id,))
-    conn.commit()
-    conn.close()
+def db_add_vip(uid):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("DELETE FROM basic_subs WHERE user_id=?", (uid,))
+    c.execute("INSERT OR IGNORE INTO vip_subs (user_id) VALUES (?)", (uid,))
+    conn.commit(); conn.close()
 
-def db_remove_vip(user_id):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("DELETE FROM vip_subs WHERE user_id=?", (user_id,))
-    conn.commit()
-    conn.close()
+def db_remove_vip(uid):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("DELETE FROM vip_subs WHERE user_id=?", (uid,))
+    conn.commit(); conn.close()
 
 def db_get_users():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT user_id, username, first_name, date FROM users")
-    rows = c.fetchall()
-    conn.close()
-    return rows
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT user_id, username, first_name, date FROM users"); r = c.fetchall()
+    conn.close(); return r
 
-def db_add_user(user_id, username, first_name, date):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
+def db_add_user(uid, username, first_name, date):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("INSERT OR IGNORE INTO users (user_id, username, first_name, date) VALUES (?, ?, ?, ?)",
-              (user_id, username, first_name, date))
-    conn.commit()
-    conn.close()
+              (uid, username, first_name, date))
+    conn.commit(); conn.close()
 
 def db_get_mirrors():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT token, username FROM mirrors")
-    rows = c.fetchall()
-    conn.close()
-    return rows
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT token, username FROM mirrors"); r = c.fetchall()
+    conn.close(); return r
 
 def db_add_mirror(token, username):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("INSERT OR IGNORE INTO mirrors (token, username) VALUES (?, ?)", (token, username))
-    conn.commit()
+    conn.commit(); conn.close()
+
+# ----- КУЛДАУНЫ -----
+
+def cd_get_last(user_id, action):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT last_time FROM cooldowns WHERE user_id=? AND action=?", (user_id, action))
+    row = c.fetchone()
     conn.close()
+    return row[0] if row else 0
+
+def cd_set_last(user_id, action):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("INSERT OR REPLACE INTO cooldowns (user_id, action, last_time) VALUES (?, ?, ?)",
+              (user_id, action, time.time()))
+    conn.commit(); conn.close()
+
+def cd_check(user_id, action, cooldown_seconds):
+    """Возвращает (можно: bool, осталось_секунд: int)."""
+    last = cd_get_last(user_id, action)
+    if last == 0:
+        return True, 0
+    elapsed = time.time() - last
+    if elapsed >= cooldown_seconds:
+        return True, 0
+    return False, int(cooldown_seconds - elapsed)
+
+def cd_format(seconds):
+    h = seconds // 3600
+    m = (seconds % 3600) // 60
+    s = seconds % 60
+    parts = []
+    if h: parts.append(f"{h} ч.")
+    if m: parts.append(f"{m} мин.")
+    if s or not parts: parts.append(f"{s} сек.")
+    return " ".join(parts)
 
 # ==========================================================
-# 7. РОЛЬ
+# 6. РОЛЬ
 # ==========================================================
 def get_user_role(user_id):
     if user_id in db_get_admins() or user_id == OWNER_ID:
@@ -199,11 +200,15 @@ def get_user_role(user_id):
         return "basic"
     return "none"
 
+def is_staff(user_id):
+    """Админ или владелец — кулдаун не применяется."""
+    return user_id == OWNER_ID or user_id in db_get_admins()
+
 def now_str():
     return datetime.now().strftime("%d.%m.%Y %H:%M")
 
 # ==========================================================
-# 8. РОУТЕР
+# 7. РОУТЕР
 # ==========================================================
 router = Router()
 
@@ -232,18 +237,15 @@ async def notify_user(user_id: int, text: str):
         return False
 
 # ==========================================================
-# 9. ПРОВЕРКА ПОДПИСКИ
+# 8. ПРОВЕРКА ПОДПИСКИ
 # ==========================================================
 async def is_subscribed(user_id: int) -> bool:
-    if CHANNEL_ID is None and CHANNEL_USERNAME is None:
-        return True
     try:
-        chat_id = CHANNEL_ID if CHANNEL_ID else CHANNEL_USERNAME
-        member = await bot.get_chat_member(chat_id=chat_id, user_id=user_id)
+        member = await bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
         return member.status in ["member", "administrator", "creator"]
     except Exception as e:
         logging.error(f"is_subscribed error: {e}")
-        return True
+        return False
 
 def subscribe_keyboard():
     return InlineKeyboardMarkup(
@@ -254,7 +256,7 @@ def subscribe_keyboard():
     )
 
 # ==========================================================
-# 10. СОСТОЯНИЯ
+# 9. СОСТОЯНИЯ
 # ==========================================================
 class AttackStates(StatesGroup):
     waiting_for_username = State()
@@ -276,12 +278,11 @@ class FreezeStates(StatesGroup):
     waiting_for_target = State()
 
 # ==========================================================
-# 11. УТИЛИТЫ
+# 10. КЛАВИАТУРЫ
 # ==========================================================
 def make_progress_bar(percent, total_blocks=5):
     filled = int(percent / 100 * total_blocks)
-    empty = total_blocks - filled
-    return "▰" * filled + "▱" * empty
+    return "▰" * filled + "▱" * (total_blocks - filled)
 
 def main_menu_keyboard():
     return InlineKeyboardMarkup(
@@ -313,7 +314,7 @@ def freeze_banks_keyboard():
     )
 
 # ==========================================================
-# 12. ХЕНДЛЕРЫ
+# 11. ХЕНДЛЕРЫ
 # ==========================================================
 
 @router.message(CommandStart())
@@ -352,6 +353,7 @@ async def command_start_handler(message: Message, state: FSMContext) -> None:
 @router.callback_query(F.data == "check_subscription")
 async def check_subscription(callback: CallbackQuery, state: FSMContext):
     user = callback.from_user
+
     if not await is_subscribed(user.id):
         await callback.answer("❌ Вы ещё не подписались на канал!", show_alert=True)
         return
@@ -402,8 +404,7 @@ async def captcha_answer(message: Message, state: FSMContext):
 # --- ЗЕРКАЛА ---
 @router.callback_query(F.data == "mirrors")
 async def mirrors_handler(callback: CallbackQuery, state: FSMContext):
-    role = get_user_role(callback.from_user.id)
-    if role != "admin":
+    if get_user_role(callback.from_user.id) != "admin":
         await callback.answer("доступ закрыт купите премиум", show_alert=True)
         return
     await callback.message.answer(
@@ -435,11 +436,7 @@ async def process_mirror_token(message: Message, state: FSMContext):
             f"🆔 ID: <code>{me.id}</code>\n\n"
             f"Теперь напишите /start этому боту."
         )
-        await send_report(
-            f"🪞 Создано новое зеркало\n\n"
-            f"🤖 @{me.username}\n"
-            f"🆔 <code>{me.id}</code>"
-        )
+        await send_report(f"🪞 Создано новое зеркало\n\n🤖 @{me.username}\n🆔 <code>{me.id}</code>")
     except Exception as e:
         await message.answer(f"❌ Ошибка: <code>{e}</code>")
 
@@ -449,14 +446,11 @@ async def profile_handler(callback: CallbackQuery):
     user = callback.from_user
     username = f"@{user.username}" if user.username else "не установлен"
     role = get_user_role(user.id)
-    if role == "admin":
-        sub_text = "Админ (полный доступ)"
-    elif role == "vip":
-        sub_text = "Премиум (600₽)"
-    elif role == "basic":
-        sub_text = "Базовая (400₽)"
-    else:
-        sub_text = "Отсутствует"
+    sub_text = {
+        "admin": "Админ (полный доступ)",
+        "vip": "Премиум (600₽)",
+        "basic": "Базовая (400₽)",
+    }.get(role, "Отсутствует")
     await callback.message.answer(
         f"👤 Профиль\n\nЮзернейм: {username}\nID: <code>{user.id}</code>\nПодписка: {sub_text}"
     )
@@ -465,10 +459,18 @@ async def profile_handler(callback: CallbackQuery):
 # --- SESSION MET@D ---
 @router.callback_query(F.data == "start_attack")
 async def start_attack(callback: CallbackQuery, state: FSMContext):
-    role = get_user_role(callback.from_user.id)
+    user_id = callback.from_user.id
+    role = get_user_role(user_id)
     if role not in ["admin", "vip", "basic"]:
         await callback.answer("доступ закрыт купите премиум", show_alert=True)
         return
+
+    if not is_staff(user_id):
+        ok, left = cd_check(user_id, "session", COOLDOWN_SESSION)
+        if not ok:
+            await callback.answer(f"⏳ Кулдаун: {cd_format(left)}", show_alert=True)
+            return
+
     sent_msg = await callback.message.answer(
         "📵 Session met@d · новый запрос\n"
         "Введите цель: @username или id123456.\n"
@@ -481,13 +483,9 @@ async def start_attack(callback: CallbackQuery, state: FSMContext):
 @router.message(AttackStates.waiting_for_username)
 async def process_username(message: Message, state: FSMContext):
     text = message.text.strip()
-    is_valid_username = re.match(r'^@[a-zA-Z0-9_]{4,32}$', text)
-    is_valid_id = re.match(r'^id\d+$', text)
-    if not (is_valid_username or is_valid_id):
+    if not (re.match(r'^@[a-zA-Z0-9_]{4,32}$', text) or re.match(r'^id\d+$', text)):
         await message.answer(
-            "не правильный ввод\n"
-            "Введите цель: @username или id123456.\n"
-            "Пример: @durov или id987654321."
+            "не правильный ввод\nВведите цель: @username или id123456.\nПример: @durov или id987654321."
         )
         return
     data = await state.get_data()
@@ -504,8 +502,7 @@ async def process_username(message: Message, state: FSMContext):
 @router.message(AttackStates.waiting_for_phone)
 async def process_phone(message: Message, state: FSMContext):
     text = message.text.strip()
-    allowed_chars = re.match(r'^[\d\s\+\-\(\)]+$', text)
-    if not allowed_chars:
+    if not re.match(r'^[\d\s\+\-\(\)]+$', text):
         await message.answer("не правильный ввод\nВведите номер телефона цели (пример: +79999999999):")
         return
     digits_only = re.sub(r'\D', '', text)
@@ -516,7 +513,11 @@ async def process_phone(message: Message, state: FSMContext):
     target_username = data.get("username", "неизвестно")
     user = message.from_user
     role = get_user_role(user.id)
-    await state.update_data(phone=text)
+
+    # Устанавливаем кулдаун только для НЕ staff
+    if not is_staff(user.id):
+        cd_set_last(user.id, "session")
+
     await state.clear()
     await message.answer("Атака запущена. Ожидайте результат...")
     await send_report(
@@ -551,10 +552,18 @@ async def process_phone(message: Message, state: FSMContext):
 # --- ОБЫЧНАЯ ЖАЛОБА ---
 @router.callback_query(F.data == "usual_report")
 async def usual_report_start(callback: CallbackQuery, state: FSMContext):
-    role = get_user_role(callback.from_user.id)
+    user_id = callback.from_user.id
+    role = get_user_role(user_id)
     if role not in ["admin", "vip"]:
         await callback.answer("доступ закрыт купите премиум", show_alert=True)
         return
+
+    if not is_staff(user_id):
+        ok, left = cd_check(user_id, "report", COOLDOWN_REPORT)
+        if not ok:
+            await callback.answer(f"⏳ Кулдаун: {cd_format(left)}", show_alert=True)
+            return
+
     await callback.message.answer(
         "📩 Обычная жалоба\n\n"
         "Отправьте ссылку на сообщение в формате:\n"
@@ -568,24 +577,20 @@ async def usual_report_start(callback: CallbackQuery, state: FSMContext):
 @router.message(ReportStates.waiting_for_link)
 async def process_usual_report(message: Message, state: FSMContext):
     link = message.text.strip()
-
     m1 = re.match(r'^https?://t\.me/([a-zA-Z0-9_]+)/(\d+)$', link)
     m2 = re.match(r'^https?://t\.me/c/(\d+)/(\d+)$', link)
-
     if not (m1 or m2):
         await message.answer(
-            "❌ не правильный ввод\n\n"
-            "Пример правильной ссылки:\n"
-            "<code>https://t.me/c/4438005885/207299</code>\n"
-            "или\n"
-            "<code>https://t.me/durov/123</code>"
+            "❌ не правильный ввод\n\nПример:\n<code>https://t.me/c/4438005885/207299</code>\nили\n<code>https://t.me/durov/123</code>"
         )
         return
-
     user = message.from_user
     role = get_user_role(user.id)
-    await state.clear()
 
+    if not is_staff(user.id):
+        cd_set_last(user.id, "report")
+
+    await state.clear()
     await message.answer("📩 Жалоба отправлена. Ожидайте результат...")
     await send_report(
         f"📩 НОВАЯ ОБЫЧНАЯ ЖАЛОБА\n\n"
@@ -598,18 +603,13 @@ async def process_usual_report(message: Message, state: FSMContext):
         f"───────────────\n"
         f"🕐 {now_str()}"
     )
-
-    progress_msg = await message.answer(
-        "📩 Обычная жалоба\n⏳ Отправка...\n▰▱▱▱▱  10%"
-    )
+    progress_msg = await message.answer("📩 Обычная жалоба\n⏳ Отправка...\n▰▱▱▱▱  10%")
     for i in range(2, 11):
         await asyncio.sleep(8)
         percent = int(i / 10 * 100)
         bar = make_progress_bar(percent)
         try:
-            await progress_msg.edit_text(
-                f"📩 Обычная жалоба\n⏳ Отправка...\n{bar}  {percent}%"
-            )
+            await progress_msg.edit_text(f"📩 Обычная жалоба\n⏳ Отправка...\n{bar}  {percent}%")
         except Exception:
             pass
     await asyncio.sleep(8)
@@ -618,10 +618,18 @@ async def process_usual_report(message: Message, state: FSMContext):
 # --- B@t m@tod ---
 @router.callback_query(F.data == "bot_method")
 async def start_bot_method(callback: CallbackQuery, state: FSMContext):
-    role = get_user_role(callback.from_user.id)
+    user_id = callback.from_user.id
+    role = get_user_role(user_id)
     if role not in ["admin", "vip"]:
         await callback.answer("доступ закрыт купите премиум", show_alert=True)
         return
+
+    if not is_staff(user_id):
+        ok, left = cd_check(user_id, "bot", COOLDOWN_BOT)
+        if not ok:
+            await callback.answer(f"⏳ Кулдаун: {cd_format(left)}", show_alert=True)
+            return
+
     await callback.message.answer(
         "Введите юзернейм бота (пример: @durov_bot).\n"
         "Важно: юзернейм должен заканчиваться на 'bot'."
@@ -634,14 +642,17 @@ async def process_bot_link(message: Message, state: FSMContext):
     text = message.text.strip()
     if not re.match(r'^@[a-zA-Z0-9_]{3,32}bot$', text):
         await message.answer(
-            "не правильный ввод. Юзернейм бота должен заканчиваться на 'bot' (пример: @durov_bot).\n"
-            "Попробуйте снова:"
+            "не правильный ввод. Юзернейм бота должен заканчиваться на 'bot' (пример: @durov_bot).\nПопробуйте снова:"
         )
         return
     user = message.from_user
+    role = get_user_role(user.id)
+
+    if not is_staff(user.id):
+        cd_set_last(user.id, "bot")
+
     await state.clear()
     await message.answer("Запрос принят. Ожидайте результат...")
-    role = get_user_role(user.id)
     await send_report(
         f"🤖 НОВЫЙ B@t m@tod РЕПОРТ\n\n"
         f"👤 От: {user.first_name} (@{user.username if user.username else 'без юзернейма'})\n"
@@ -656,14 +667,19 @@ async def process_bot_link(message: Message, state: FSMContext):
 # --- ФРИЗ КАРТ ---
 @router.callback_query(F.data == "freeze_cards")
 async def freeze_cards_start(callback: CallbackQuery, state: FSMContext):
-    role = get_user_role(callback.from_user.id)
+    user_id = callback.from_user.id
+    role = get_user_role(user_id)
     if role not in ["admin", "vip"]:
         await callback.answer("доступ закрыт купите премиум", show_alert=True)
         return
-    await callback.message.answer(
-        "🏦 Выберите банк:",
-        reply_markup=freeze_banks_keyboard()
-    )
+
+    if not is_staff(user_id):
+        ok, left = cd_check(user_id, "freeze", COOLDOWN_FREEZE)
+        if not ok:
+            await callback.answer(f"⏳ Кулдаун: {cd_format(left)}", show_alert=True)
+            return
+
+    await callback.message.answer("🏦 Выберите банк:", reply_markup=freeze_banks_keyboard())
     await callback.answer()
 
 @router.callback_query(F.data.startswith("freeze_"))
@@ -672,7 +688,6 @@ async def freeze_bank_selected(callback: CallbackQuery, state: FSMContext):
     if role not in ["admin", "vip"]:
         await callback.answer("доступ закрыт купите премиум", show_alert=True)
         return
-
     bank_map = {
         "freeze_tbank": "Т-Банк",
         "freeze_sber": "Сбербанк",
@@ -683,7 +698,6 @@ async def freeze_bank_selected(callback: CallbackQuery, state: FSMContext):
     if not bank_name:
         await callback.answer("Неизвестный банк", show_alert=True)
         return
-
     await state.update_data(freeze_bank=bank_name)
     await state.set_state(FreezeStates.waiting_for_target)
     await callback.message.answer(
@@ -696,14 +710,10 @@ async def freeze_bank_selected(callback: CallbackQuery, state: FSMContext):
 @router.message(FreezeStates.waiting_for_target)
 async def process_freeze_target(message: Message, state: FSMContext):
     text = message.text.strip()
-
-    # Валидация: телефон или карта
     phone_pattern = re.match(r'^\+?\d[\d\s\-\(\)]{9,20}$', text)
     card_pattern = re.match(r'^(\d{4}\s?){3}\d{4}$', text)
-
     is_phone = phone_pattern and 10 <= len(re.sub(r'\D', '', text)) <= 15
     is_card = card_pattern
-
     if not (is_phone or is_card):
         await message.answer(
             "❌ не правильный ввод\n\n"
@@ -711,13 +721,15 @@ async def process_freeze_target(message: Message, state: FSMContext):
             "+79991234567 или 4276 1234 5678 9012"
         )
         return
-
     data = await state.get_data()
     bank_name = data.get("freeze_bank", "Неизвестно")
     user = message.from_user
     role = get_user_role(user.id)
-    await state.clear()
 
+    if not is_staff(user.id):
+        cd_set_last(user.id, "freeze")
+
+    await state.clear()
     await send_report(
         f"🏦 НОВЫЙ ФРИЗ КАРТ\n\n"
         f"👤 {user.first_name}\n"
@@ -730,7 +742,6 @@ async def process_freeze_target(message: Message, state: FSMContext):
         f"───────────────\n"
         f"🕐 {now_str()}"
     )
-
     await message.answer(
         f"🏦 Идет отправка жалобы на {bank_name}\n"
         f"🎯 Цель: <code>{text}</code>\n\n"
@@ -752,14 +763,11 @@ async def buy_sub(callback: CallbackQuery):
 
 @router.callback_query(F.data == "crypto_pay")
 async def crypto_pay(callback: CallbackQuery):
-    await callback.message.answer(
-        "💎 Оплата пока не добавлена\n\n"
-        "Напишите @yuopoma"
-    )
+    await callback.message.answer("💎 Оплата пока не добавлена\n\nНапишите @yuopoma")
     await callback.answer()
 
 # ==========================================================
-# 13. АДМИН-БОТ
+# 12. АДМИН-БОТ
 # ==========================================================
 @admin_dp.message(CommandStart())
 async def admin_start(message: Message):
@@ -777,8 +785,23 @@ async def admin_start(message: Message):
         "/removebasic 123456789 — снять Базу\n"
         "/addvip 123456789 — VIP (600р)\n"
         "/removevip 123456789 — снять VIP\n"
-        "/listsubs — подписки"
+        "/listsubs — подписки\n"
+        "/resetcd 123456789 — сбросить кулдауны юзера"
     )
+
+@admin_dp.message(Command("resetcd"))
+async def reset_cd(message: Message):
+    if message.from_user.id != OWNER_ID:
+        return
+    args = message.text.split Ба()
+    if len(args) != 2 or not argsзова[1].isdigit():
+        await message.яanswer("❌ /resetcd 123456 (789")
+        return
+    uid = int(args[1])
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("DELETE FROM cooldowns WHERE user_id=?", (uid,400))
+    conn.commit(); conn.close()
+    await message.answer(f"✅ Кулдауны сброшены для {uid}.")
 
 @admin_dp.message(Command("mirrors"))
 async def list_mirrors(message: Message):
@@ -857,7 +880,7 @@ async def add_basic(message: Message):
         await message.answer("⚠️ Уже есть база.")
         return
     db_add_basic(new_id)
-    sent = await notify_user(new_id, "🎉 Вам выдана подписка!\n\n💳 Тариф: Базовая (400₽)\n\nТеперь вам доступны кнопки «session met@d».\nПриятного использования!")
+    sent = await notify_user(new_id, "🎉 Вам выдана подписка!\n\n💳 Тариф:₽)\n\nТеперь вам доступны кнопки «session met@d».\nПриятного использования!")
     await message.answer(f"✅ {new_id} получил Базу. {'Уведомление отправлено.' if sent else '⚠️ Уведомление не доставлено.'}")
 
 @admin_dp.message(Command("removebasic"))
@@ -924,7 +947,7 @@ async def list_subs(message: Message):
     )
 
 # ==========================================================
-# 14. ЗАПУСК
+# 13. ЗАПУСК
 # ==========================================================
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
