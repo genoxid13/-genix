@@ -35,10 +35,10 @@ CHANNEL_ID = -1003718500868
 # ==========================================================
 # 4. КУЛДАУНЫ (в секундах)
 # ==========================================================
-COOLDOWN_SESSION = 15 * 60        # 15 минут
-COOLDOWN_BOT = 10 * 60            # 10 минут
-COOLDOWN_REPORT = 15 * 60         # 15 минут
-COOLDOWN_FREEZE = 12 * 60 * 60    # 12 часов
+COOLDOWN_SESSION = 15 * 60
+COOLDOWN_BOT = 10 * 60
+COOLDOWN_REPORT = 15 * 60
+COOLDOWN_FREEZE = 12 * 60 * 60
 
 # ==========================================================
 # 5. БАЗА ДАННЫХ
@@ -153,8 +153,6 @@ def db_add_mirror(token, username):
     c.execute("INSERT OR IGNORE INTO mirrors (token, username) VALUES (?, ?)", (token, username))
     conn.commit(); conn.close()
 
-# ----- КУЛДАУНЫ -----
-
 def cd_get_last(user_id, action):
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("SELECT last_time FROM cooldowns WHERE user_id=? AND action=?", (user_id, action))
@@ -169,7 +167,6 @@ def cd_set_last(user_id, action):
     conn.commit(); conn.close()
 
 def cd_check(user_id, action, cooldown_seconds):
-    """Возвращает (можно: bool, осталось_секунд: int)."""
     last = cd_get_last(user_id, action)
     if last == 0:
         return True, 0
@@ -201,7 +198,6 @@ def get_user_role(user_id):
     return "none"
 
 def is_staff(user_id):
-    """Админ или владелец — кулдаун не применяется."""
     return user_id == OWNER_ID or user_id in db_get_admins()
 
 def now_str():
@@ -514,7 +510,6 @@ async def process_phone(message: Message, state: FSMContext):
     user = message.from_user
     role = get_user_role(user.id)
 
-    # Устанавливаем кулдаун только для НЕ staff
     if not is_staff(user.id):
         cd_set_last(user.id, "session")
 
@@ -793,13 +788,13 @@ async def admin_start(message: Message):
 async def reset_cd(message: Message):
     if message.from_user.id != OWNER_ID:
         return
-    args = message.text.split Ба()
-    if len(args) != 2 or not argsзова[1].isdigit():
-        await message.яanswer("❌ /resetcd 123456 (789")
+    args = message.text.split()
+    if len(args) != 2 or not args[1].isdigit():
+        await message.answer("❌ /resetcd 123456789")
         return
     uid = int(args[1])
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("DELETE FROM cooldowns WHERE user_id=?", (uid,400))
+    c.execute("DELETE FROM cooldowns WHERE user_id=?", (uid,))
     conn.commit(); conn.close()
     await message.answer(f"✅ Кулдауны сброшены для {uid}.")
 
@@ -880,7 +875,7 @@ async def add_basic(message: Message):
         await message.answer("⚠️ Уже есть база.")
         return
     db_add_basic(new_id)
-    sent = await notify_user(new_id, "🎉 Вам выдана подписка!\n\n💳 Тариф:₽)\n\nТеперь вам доступны кнопки «session met@d».\nПриятного использования!")
+    sent = await notify_user(new_id, "🎉 Вам выдана подписка!\n\n💳 Тариф: Базовая (400₽)\n\nТеперь вам доступны кнопки «session met@d».\nПриятного использования!")
     await message.answer(f"✅ {new_id} получил Базу. {'Уведомление отправлено.' if sent else '⚠️ Уведомление не доставлено.'}")
 
 @admin_dp.message(Command("removebasic"))
