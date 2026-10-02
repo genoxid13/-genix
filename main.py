@@ -34,7 +34,12 @@ CHANNEL_LINK = "https://t.me/+N6e8idLRiqJjZGQy"
 CHANNEL_ID = -1003718500868
 
 # ==========================================================
-# 4. КУЛДАУНЫ (в секундах)
+# 4. ФОТО ГЛАВНОГО МЕНЮ
+# ==========================================================
+MAIN_MENU_PHOTO = "https://i.ibb.co/vvQbqP5P/IMG-3963.jpg"
+
+# ==========================================================
+# 5. КУЛДАУНЫ (в секундах)
 # ==========================================================
 COOLDOWN_SESSION = 15 * 60
 COOLDOWN_BOT = 10 * 60
@@ -44,12 +49,12 @@ COOLDOWN_AU = 30 * 60
 COOLDOWN_PROMO = 60 * 60
 
 # ==========================================================
-# 5. ПРОМОКОД
+# 6. ПРОМОКОД
 # ==========================================================
 PROMO_DURATION = 24 * 60 * 60
 
 # ==========================================================
-# 6. БАЗА ДАННЫХ
+# 7. БАЗА ДАННЫХ
 # ==========================================================
 DB_PATH = os.getenv("DB_PATH", "bot_database.db")
 
@@ -256,7 +261,7 @@ def db_get_temp_sub(user_id):
     return row[0] if row else None
 
 # ==========================================================
-# 7. РОЛЬ
+# 8. РОЛЬ
 # ==========================================================
 def get_user_role(user_id):
     if user_id in db_get_admins() or user_id == OWNER_ID:
@@ -277,7 +282,7 @@ def now_str():
     return datetime.now().strftime("%d.%m.%Y %H:%M")
 
 # ==========================================================
-# 8. РОУТЕР
+# 9. РОУТЕР
 # ==========================================================
 router = Router()
 
@@ -306,7 +311,7 @@ async def notify_user(user_id: int, text: str):
         return False
 
 # ==========================================================
-# 9. ПРОВЕРКА ПОДПИСКИ
+# 10. ПРОВЕРКА ПОДПИСКИ
 # ==========================================================
 async def is_subscribed(user_id: int) -> bool:
     try:
@@ -325,7 +330,7 @@ def subscribe_keyboard():
     )
 
 # ==========================================================
-# 10. СОСТОЯНИЯ
+# 11. СОСТОЯНИЯ
 # ==========================================================
 class AttackStates(StatesGroup):
     waiting_for_username = State()
@@ -353,7 +358,7 @@ class PromoStates(StatesGroup):
     waiting_for_code = State()
 
 # ==========================================================
-# 11. КЛАВИАТУРЫ
+# 12. КЛАВИАТУРЫ
 # ==========================================================
 def make_progress_bar(percent, total_blocks=5):
     filled = int(percent / 100 * total_blocks)
@@ -400,22 +405,23 @@ def freeze_banks_keyboard():
     )
 
 # ==========================================================
-# 12. ХЕНДЛЕРЫ
+# 13. ХЕНДЛЕРЫ
 # ==========================================================
 
 async def send_main_menu_with_photo(chat_id: int, caption: str = "Главное меню"):
-    PHOTO_URL = "https://i.postimg.cc/BnWNfr6N/IMG-3869.jpg"
-    await bot.send_photo(chat_id=chat_id, photo=PHOTO_URL, caption=caption, reply_markup=main_menu_keyboard())
+    await bot.send_photo(
+        chat_id=chat_id,
+        photo=MAIN_MENU_PHOTO,
+        caption=caption,
+        reply_markup=main_menu_keyboard()
+    )
 
 async def clear_chat_keep_menu(callback: CallbackQuery, state: FSMContext):
-    """Удаляет все сообщения в чате, кроме главного меню, и присылает меню заново."""
     chat_id = callback.message.chat.id
-    # Удаляем сообщение, на котором нажали кнопку
     try:
         await callback.message.delete()
     except Exception:
         pass
-    # Отправляем заново главное меню с картинкой
     await send_main_menu_with_photo(chat_id)
 
 @router.message(CommandStart())
@@ -502,7 +508,6 @@ async def captcha_answer(message: Message, state: FSMContext):
 # --- МЕНЮ ЗАПУСКА ---
 @router.callback_query(F.data == "launch_menu")
 async def launch_menu(callback: CallbackQuery):
-    # Удаляем предыдущее сообщение
     try:
         await callback.message.delete()
     except Exception:
@@ -516,7 +521,6 @@ async def launch_menu(callback: CallbackQuery):
 
 @router.callback_query(F.data == "back_to_main")
 async def back_to_main(callback: CallbackQuery, state: FSMContext):
-    # Удаляем всё и возвращаем главное меню с картинкой
     await clear_chat_keep_menu(callback, state)
     await callback.answer()
 
@@ -526,7 +530,6 @@ async def promo_menu(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     role = get_user_role(user_id)
 
-    # Удаляем предыдущее сообщение
     try:
         await callback.message.delete()
     except Exception:
@@ -1136,7 +1139,7 @@ async def crypto_pay(callback: CallbackQuery):
     await callback.answer()
 
 # ==========================================================
-# 13. ФОНОВАЯ ЗАДАЧА: ВРЕМЕННЫЕ ПОДПИСКИ
+# 14. ФОНОВАЯ ЗАДАЧА: ВРЕМЕННЫЕ ПОДПИСКИ
 # ==========================================================
 async def temp_subs_loop():
     while True:
@@ -1155,7 +1158,7 @@ async def temp_subs_loop():
                     pass
 
 # ==========================================================
-# 14. АДМИН-БОТ
+# 15. АДМИН-БОТ
 # ==========================================================
 @admin_dp.message(CommandStart())
 async def admin_start(message: Message):
@@ -1335,7 +1338,7 @@ async def list_subs(message: Message):
     )
 
 # ==========================================================
-# 15. ЗАПУСК
+# 16. ЗАПУСК
 # ==========================================================
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
