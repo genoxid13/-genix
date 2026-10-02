@@ -39,6 +39,7 @@ COOLDOWN_SESSION = 15 * 60
 COOLDOWN_BOT = 10 * 60
 COOLDOWN_REPORT = 15 * 60
 COOLDOWN_FREEZE = 12 * 60 * 60
+COOLDOWN_AU = 30 * 60
 
 # ==========================================================
 # 5. БАЗА ДАННЫХ
@@ -273,6 +274,9 @@ class ReportStates(StatesGroup):
 class FreezeStates(StatesGroup):
     waiting_for_target = State()
 
+class AUStates(StatesGroup):
+    waiting_for_username = State()
+
 # ==========================================================
 # 10. КЛАВИАТУРЫ
 # ==========================================================
@@ -283,9 +287,7 @@ def make_progress_bar(percent, total_blocks=5):
 def main_menu_keyboard():
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="session met@d", callback_data="start_attack")],
-            [InlineKeyboardButton(text="Обычная жалоба", callback_data="usual_report")],
-            [InlineKeyboardButton(text="B@t m@tod", callback_data="bot_method")],
+            [InlineKeyboardButton(text="Запуск 🚀", callback_data="launch_menu")],
             [InlineKeyboardButton(text="Фриз карт", callback_data="freeze_cards")],
             [
                 InlineKeyboardButton(text="Покупка", callback_data="buy_sub"),
@@ -296,6 +298,17 @@ def main_menu_keyboard():
                 InlineKeyboardButton(text="Наш канал", url=CHANNEL_LINK),
                 InlineKeyboardButton(text="Работы", url="https://t.me/+bUkMsYZDc2o3YzRl")
             ]
+        ]
+    )
+
+def launch_menu_keyboard():
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="session met@d", callback_data="start_attack")],
+            [InlineKeyboardButton(text="Обычная жалоба", callback_data="usual_report")],
+            [InlineKeyboardButton(text="B@t m@tod", callback_data="bot_method")],
+            [InlineKeyboardButton(text="AU report 🇦🇺", callback_data="au_report")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
         ]
     )
 
@@ -397,6 +410,20 @@ async def captcha_answer(message: Message, state: FSMContext):
     PHOTO_URL = "https://i.postimg.cc/BnWNfr6N/IMG-3869.jpg"
     await message.answer_photo(photo=PHOTO_URL, caption="Главное меню", reply_markup=main_menu_keyboard())
 
+# --- МЕНЮ ЗАПУСКА ---
+@router.callback_query(F.data == "launch_menu")
+async def launch_menu(callback: CallbackQuery):
+    await callback.message.answer(
+        "🚀 <b>Запуск</b>\n\nВыберите инструмент:",
+        reply_markup=launch_menu_keyboard()
+    )
+    await callback.answer()
+
+@router.callback_query(F.data == "back_to_main")
+async def back_to_main(callback: CallbackQuery):
+    await callback.message.answer("Главное меню", reply_markup=main_menu_keyboard())
+    await callback.answer()
+
 # --- ЗЕРКАЛА ---
 @router.callback_query(F.data == "mirrors")
 async def mirrors_handler(callback: CallbackQuery, state: FSMContext):
@@ -444,8 +471,8 @@ async def profile_handler(callback: CallbackQuery):
     role = get_user_role(user.id)
     sub_text = {
         "admin": "Админ (полный доступ)",
-        "vip": "Премиум (600₽)",
-        "basic": "Базовая (400₽)",
+        "vip": "Premium (400₽)",
+        "basic": "Basic (250₽)",
     }.get(role, "Отсутствует")
     await callback.message.answer(
         f"👤 Профиль\n\nЮзернейм: {username}\nID: <code>{user.id}</code>\nПодписка: {sub_text}"
@@ -610,12 +637,12 @@ async def process_usual_report(message: Message, state: FSMContext):
     await asyncio.sleep(8)
     await message.answer("📩 Обычная жалоба\n✅ Жалоба успешно отправлена")
 
-# --- B@t m@tod ---
+# --- B@t m@tod (теперь доступен и Basic) ---
 @router.callback_query(F.data == "bot_method")
 async def start_bot_method(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     role = get_user_role(user_id)
-    if role not in ["admin", "vip"]:
+    if role not in ["admin", "vip", "basic"]:
         await callback.answer("доступ закрыт купите премиум", show_alert=True)
         return
 
@@ -658,6 +685,100 @@ async def process_bot_link(message: Message, state: FSMContext):
     )
     await asyncio.sleep(120)
     await message.answer("репорт доставлен")
+
+# --- AU REPORT (только VIP) ---
+@router.callback_query(F.data == "au_report")
+async def au_report_start(callback: CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    role = get_user_role(user_id)
+    if role not in ["admin", "vip"]:
+        await callback.answer("доступ закрыт купите премиум", show_alert=True)
+        return
+
+    if not is_staff(user_id):
+        ok, left = cd_check(user_id, "au", COOLDOWN_AU)
+        if not ok:
+            await callback.answer(f"⏳ Кулдаун: {cd_format(left)}", show_alert=True)
+            return
+
+    sent_msg = await callback.message.answer(
+        "🇦🇺 AU report · новый запрос\n"
+        "Введите юзернейм цели (пример: @durov)."
+    )
+    await state.update_data(au_msg_to_delete=sent_msg.message_id)
+    await state.set_state(AUStates.waiting_for_username)
+    await callback.answer()
+
+@router.message(AUStates.waiting_for_username)
+async def process_au_username(message: Message, state: FSMContext):
+    text = message.text.strip()
+    if not re.match(r'^@[a-zA-Z0-9_]{4,32}$', text):
+        await message.answer(
+            "❌ не правильный ввод\n\n"
+            "Введите юзернейм цели (пример: @durov)."
+        )
+        return
+
+    data = await state.get_data()
+    msg_to_delete = data.get("au_msg_to_delete")
+    if msg_to_delete:
+        try:
+            await message.bot.delete_message(chat_id=message.chat.id, message_id=msg_to_delete)
+        except Exception:
+            pass
+
+    user = message.from_user
+    role = get_user_role(user.id)
+
+    if not is_staff(user.id):
+        cd_set_last(user.id, "au")
+
+    await state.clear()
+
+    await send_report(
+        f"🇦🇺 НОВЫЙ AU REPORT\n\n"
+        f"👤 {user.first_name}\n"
+        f"🔗 @{user.username if user.username else 'без юзернейма'}\n"
+        f"🆔 <code>{user.id}</code>\n"
+        f"📊 Роль: {role}\n"
+        f"───────────────\n"
+        f"🎯 Цель: <code>{text}</code>\n"
+        f"───────────────\n"
+        f"🕐 {now_str()}"
+    )
+
+    progress_msg = await message.answer(
+        "🇦🇺 Отправка через AU report...\n\n"
+        "▱▱▱▱▱▱▱▱▱▱  0%"
+    )
+
+    # Прогресс 0–100% за 3–5 минут (случайно)
+    total_time = random.randint(180, 300)  # 3–5 минут
+    steps = 10
+    step_time = total_time / steps
+
+    for i in range(1, steps + 1):
+        await asyncio.sleep(step_time)
+        percent = int(i / steps * 100)
+        bar = make_progress_bar(percent, total_blocks=10)
+        try:
+            await progress_msg.edit_text(
+                f"🇦🇺 Отправка через AU report...\n\n"
+                f"{bar}  {percent}%"
+            )
+        except Exception:
+            pass
+
+    # Удаляем сообщение с прогрессом
+    try:
+        await progress_msg.delete()
+    except Exception:
+        pass
+
+    await message.answer(
+        "🇦🇺 AU report\n\n"
+        "✅ Успешно отправлено 4/4 аккаунтов"
+    )
 
 # --- ФРИЗ КАРТ ---
 @router.callback_query(F.data == "freeze_cards")
@@ -748,8 +869,8 @@ async def buy_sub(callback: CallbackQuery):
     await callback.message.answer(
         "Выберите подписку:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="400 рублей", url="https://t.me/yuopoma")],
-            [InlineKeyboardButton(text="Премиум 600 руб", url="https://t.me/yuopoma")],
+            [InlineKeyboardButton(text="basic 250руб", url="https://t.me/yuopoma")],
+            [InlineKeyboardButton(text="premium 400", url="https://t.me/yuopoma")],
             [InlineKeyboardButton(text="Крипта", callback_data="crypto_pay")]
         ])
     )
@@ -775,10 +896,10 @@ async def admin_start(message: Message):
         "/mirrors — список зеркал\n"
         "/add 123456789 — админ\n"
         "/remove 123456789 — снять админа\n"
-        "/addbasic 123456789 — База (400р)\n"
-        "/removebasic 123456789 — снять Базу\n"
-        "/addvip 123456789 — VIP (600р)\n"
-        "/removevip 123456789 — снять VIP\n"
+        "/addbasic 123456789 — Basic (250р)\n"
+        "/removebasic 123456789 — снять Basic\n"
+        "/addvip 123456789 — Premium (400р)\n"
+        "/removevip 123456789 — снять Premium\n"
         "/listsubs — подписки\n"
         "/resetcd 123456789 — сбросить кулдауны юзера"
     )
@@ -821,7 +942,7 @@ async def admin_users(message: Message):
     text = f"👥 Всего: {len(users)}\n\n"
     for uid, uname, fname, date in users:
         role = get_user_role(uid)
-        tag = {"admin": "👑 Админ", "vip": "💎 VIP", "basic": "💳 База"}.get(role, "—")
+        tag = {"admin": "👑 Админ", "vip": "💎 Premium", "basic": "💳 Basic"}.get(role, "—")
         uname_str = f"@{uname}" if uname != "нет" else "без юзернейма"
         text += f"• {fname} ({uname_str})\n  ID: <code>{uid}</code>\n  Подписка: {tag}\n  Дата: {date}\n\n"
     if len(text) > 4000:
@@ -871,11 +992,11 @@ async def add_basic(message: Message):
         return
     new_id = int(args[1])
     if new_id in db_get_basic():
-        await message.answer("⚠️ Уже есть база.")
+        await message.answer("⚠️ Уже есть Basic.")
         return
     db_add_basic(new_id)
-    sent = await notify_user(new_id, "🎉 Вам выдана подписка!\n\n💳 Тариф: Базовая (400₽)\n\nТеперь вам доступны кнопки «session met@d».\nПриятного использования!")
-    await message.answer(f"✅ {new_id} получил Базу. {'Уведомление отправлено.' if sent else '⚠️ Уведомление не доставлено.'}")
+    sent = await notify_user(new_id, "🎉 Вам выдана подписка!\n\n💳 Тариф: Basic (250₽)\n\nТеперь вам доступны кнопки «session met@d» и «B@t m@tod».\nПриятного использования!")
+    await message.answer(f"✅ {new_id} получил Basic. {'Уведомление отправлено.' if sent else '⚠️ Уведомление не доставлено.'}")
 
 @admin_dp.message(Command("removebasic"))
 async def remove_basic(message: Message):
@@ -887,11 +1008,11 @@ async def remove_basic(message: Message):
         return
     rem_id = int(args[1])
     if rem_id not in db_get_basic():
-        await message.answer("⚠️ Нет базы.")
+        await message.answer("⚠️ Нет Basic.")
         return
     db_remove_basic(rem_id)
-    sent = await notify_user(rem_id, "⚠️ Ваша подписка была снята.\n\n💳 Тариф: Базовая (400₽)\n\nЕсли это ошибка — напишите @yuopoma")
-    await message.answer(f"✅ База снята с {rem_id}. {'Уведомление отправлено.' if sent else '⚠️ Уведомление не доставлено.'}")
+    sent = await notify_user(rem_id, "⚠️ Ваша подписка была снята.\n\n💳 Тариф: Basic (250₽)\n\nЕсли это ошибка — напишите @yuopoma")
+    await message.answer(f"✅ Basic снят с {rem_id}. {'Уведомление отправлено.' if sent else '⚠️ Уведомление не доставлено.'}")
 
 @admin_dp.message(Command("addvip"))
 async def add_vip(message: Message):
@@ -903,11 +1024,11 @@ async def add_vip(message: Message):
         return
     new_id = int(args[1])
     if new_id in db_get_vip():
-        await message.answer("⚠️ Уже VIP.")
+        await message.answer("⚠️ Уже Premium.")
         return
     db_add_vip(new_id)
-    sent = await notify_user(new_id, "💎 Вам выдана VIP подписка!\n\n💎 Тариф: Премиум (600₽)\n\nТеперь вам доступны:\n• Кнопка «session met@d»\n• Кнопка «B@t m@tod»\n• Кнопка «Обычная жалоба»\n• Кнопка «Фриз карт»\n\nПриятного использования!")
-    await message.answer(f"✅ {new_id} получил VIP. {'Уведомление отправлено.' if sent else '⚠️ Уведомление не доставлено.'}")
+    sent = await notify_user(new_id, "💎 Вам выдана Premium подписка!\n\n💎 Тариф: Premium (400₽)\n\nТеперь вам доступны:\n• session met@d\n• B@t m@tod\n• Обычная жалоба\n• AU report 🇦🇺\n• Фриз карт\n\nПриятного использования!")
+    await message.answer(f"✅ {new_id} получил Premium. {'Уведомление отправлено.' if sent else '⚠️ Уведомление не доставлено.'}")
 
 @admin_dp.message(Command("removevip"))
 async def remove_vip(message: Message):
@@ -919,11 +1040,11 @@ async def remove_vip(message: Message):
         return
     rem_id = int(args[1])
     if rem_id not in db_get_vip():
-        await message.answer("⚠️ Нет VIP.")
+        await message.answer("⚠️ Нет Premium.")
         return
     db_remove_vip(rem_id)
-    sent = await notify_user(rem_id, "⚠️ Ваша VIP подписка была снята.\n\n💎 Тариф: Премиум (600₽)\n\nЕсли это ошибка — напишите @yuopoma")
-    await message.answer(f"✅ VIP снят с {rem_id}. {'Уведомление отправлено.' if sent else '⚠️ Уведомление не доставлено.'}")
+    sent = await notify_user(rem_id, "⚠️ Ваша Premium подписка была снята.\n\n💎 Тариф: Premium (400₽)\n\nЕсли это ошибка — напишите @yuopoma")
+    await message.answer(f"✅ Premium снят с {rem_id}. {'Уведомление отправлено.' if sent else '⚠️ Уведомление не доставлено.'}")
 
 @admin_dp.message(Command("listsubs"))
 async def list_subs(message: Message):
@@ -935,8 +1056,8 @@ async def list_subs(message: Message):
     mirrors = db_get_mirrors()
     await message.answer(
         f"👥 Админы: {admins}\n\n"
-        f"💳 База (400р): {basic}\n\n"
-        f"💎 VIP (600р): {vip}\n\n"
+        f"💳 Basic (250р): {basic}\n\n"
+        f"💎 Premium (400р): {vip}\n\n"
         f"🪞 Зеркал: {len(mirrors)}"
     )
 
