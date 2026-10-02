@@ -5,6 +5,7 @@ import re
 import os
 import sqlite3
 import time
+import string
 from datetime import datetime
 
 from aiogram import Bot, Dispatcher, F, Router
@@ -40,9 +41,15 @@ COOLDOWN_BOT = 10 * 60
 COOLDOWN_REPORT = 15 * 60
 COOLDOWN_FREEZE = 12 * 60 * 60
 COOLDOWN_AU = 30 * 60
+COOLDOWN_PROMO = 60 * 60
 
 # ==========================================================
-# 5. БАЗА ДАННЫХ
+# 5. ПРОМОКОД
+# ==========================================================
+PROMO_DURATION = 24 * 60 * 60  # 24 часа
+
+# ==========================================================
+# 6. БАЗА ДАННЫХ
 # ==========================================================
 DB_PATH = os.getenv("DB_PATH", "bot_database.db")
 
@@ -67,6 +74,17 @@ def init_db():
         action TEXT,
         last_time REAL,
         PRIMARY KEY (user_id, action)
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS promocodes (
+        code TEXT PRIMARY KEY,
+        created_by INTEGER,
+        used_by INTEGER,
+        expires_at REAL,
+        created_at REAL
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS temp_subs (
+        user_id INTEGER PRIMARY KEY,
+        expires_at REAL
     )""")
 
     c.execute("SELECT COUNT(*) FROM admins")
@@ -186,8 +204,61 @@ def cd_format(seconds):
     if s or not parts: parts.append(f"{s} сек.")
     return " ".join(parts)
 
+# ----- ПРОМОКОДЫ -----
+
+def gen_promo_code(length=10):
+    chars = string.ascii_uppercase + string.digits
+    return "".join(random.choice(chars) for _ in range(length))
+
+def db_create_promo(created_by):
+    code = gen_promo_code()
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    while True:
+        c.execute("SELECT 1 FROM promocodes WHERE code=?", (code,))
+        if not c.fetchone():
+            break
+        code = gen_promo_code()
+    c.execute("""INSERT INTO promocodes (code, created_by, used_by, expires_at, created_at)
+                 VALUES (?, ?, NULL, NULL, ?)""",
+              (code, created_by, time.time()))
+    conn.commit(); conn.close()
+    return code
+
+def db_get_promo(code):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT code, created_by, used_by, expires_at FROM promocodes WHERE code=?", (code,))
+    row = c.fetchone()
+    conn.close()
+    return row
+
+def db_use_promo(code, user_id):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    expires = time.time() + PROMO_DURATION
+    c.execute("UPDATE promocodes SET used_by=?, expires_at=? WHERE code=?",
+              (user_id, expires, code))
+    c.execute("INSERT OR REPLACE INTO temp_subs (user_id, expires_at) VALUES (?, ?)",
+              (user_id, expires))
+    conn.commit(); conn.close()
+
+def db_get_temp_subs():
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT user_id, expires_at FROM temp_subs"); r = c.fetchall()
+    conn.close(); return r
+
+def db_remove_temp_sub(user_id):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("DELETE FROM temp_subs WHERE user_id=?", (user_id,))
+    conn.commit(); conn.close()
+
+def db_get_temp_sub(user_id):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT expires_at FROM temp_subs WHERE user_id=?", (user_id,))
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else None
+
 # ==========================================================
-# 6. РОЛЬ
+# 7. РОЛЬ
 # ==========================================================
 def get_user_role(user_id):
     if user_id in db_get_admins() or user_id == OWNER_ID:
@@ -195,6 +266,10 @@ def get_user_role(user_id):
     if user_id in db_get_vip():
         return "vip"
     if user_id in db_get_basic():
+        return "basic"
+    # Проверка временной подписки
+    exp = db_get_temp_sub(user_id)
+    if exp and exp > time.time():
         return "basic"
     return "none"
 
@@ -205,7 +280,7 @@ def now_str():
     return datetime.now().strftime("%d.%m.%Y %H:%M")
 
 # ==========================================================
-# 7. РОУТЕР
+# 8. РОУТЕР
 # ==========================================================
 router = Router()
 
@@ -234,7 +309,7 @@ async def notify_user(user_id: int, text: str):
         return False
 
 # ==========================================================
-# 8. ПРОВЕРКА ПОДПИСКИ
+# 9. ПРОВЕРКА ПОДПИСКИ
 # ==========================================================
 async def is_subscribed(user_id: int) -> bool:
     try:
@@ -253,7 +328,7 @@ def subscribe_keyboard():
     )
 
 # ==========================================================
-# 9. СОСТОЯНИЯ
+# 10. СОСТОЯНИЯ
 # ==========================================================
 class AttackStates(StatesGroup):
     waiting_for_username = State()
@@ -277,8 +352,11 @@ class FreezeStates(StatesGroup):
 class AUStates(StatesGroup):
     waiting_for_username = State()
 
+class PromoStates(StatesGroup):
+    waiting_for_code = State()
+
 # ==========================================================
-# 10. КЛАВИАТУРЫ
+# 11. КЛАВИАТУРЫ
 # ==========================================================
 def make_progress_bar(percent, total_blocks=5):
     filled = int(percent / 100 * total_blocks)
@@ -288,7 +366,7 @@ def main_menu_keyboard():
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="Запуск 🚀", callback_data="launch_menu")],
-            [InlineKeyboardButton(text="Фриз карт", callback_data="freeze_cards")],
+            [InlineKeyboardButton(text="Промокоды 🎟", callback_data="promo_menu")],
             [
                 InlineKeyboardButton(text="Покупка", callback_data="buy_sub"),
                 InlineKeyboardButton(text="Профиль", callback_data="profile")
@@ -308,6 +386,7 @@ def launch_menu_keyboard():
             [InlineKeyboardButton(text="Обычная жалоба", callback_data="usual_report")],
             [InlineKeyboardButton(text="B@t m@tod", callback_data="bot_method")],
             [InlineKeyboardButton(text="AU report 🇦🇺", callback_data="au_report")],
+            [InlineKeyboardButton(text="Фриз карт", callback_data="freeze_cards")],
             [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
         ]
     )
@@ -318,12 +397,13 @@ def freeze_banks_keyboard():
             [InlineKeyboardButton(text="🏦 Т-Банк", callback_data="freeze_tbank")],
             [InlineKeyboardButton(text="🏦 Сбербанк", callback_data="freeze_sber")],
             [InlineKeyboardButton(text="🏦 Альфа-Банк", callback_data="freeze_alfa")],
-            [InlineKeyboardButton(text="🏦 Озон Банк", callback_data="freeze_ozon")]
+            [InlineKeyboardButton(text="🏦 Озон Банк", callback_data="freeze_ozon")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="launch_menu")]
         ]
     )
 
 # ==========================================================
-# 11. ХЕНДЛЕРЫ
+# 12. ХЕНДЛЕРЫ
 # ==========================================================
 
 @router.message(CommandStart())
@@ -424,6 +504,65 @@ async def back_to_main(callback: CallbackQuery):
     await callback.message.answer("Главное меню", reply_markup=main_menu_keyboard())
     await callback.answer()
 
+# --- ПРОМОКОДЫ ---
+@router.callback_query(F.data == "promo_menu")
+async def promo_menu(callback: CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    role = get_user_role(user_id)
+
+    if role == "admin":
+        # Админ — генерируем промокод
+        if not is_staff(user_id):
+            ok, left = cd_check(user_id, "promo", COOLDOWN_PROMO)
+            if not ok:
+                await callback.answer(f"⏳ Кулдаун: {cd_format(left)}", show_alert=True)
+                return
+        code = db_create_promo(user_id)
+        if not is_staff(user_id):
+            cd_set_last(user_id, "promo")
+        await callback.message.answer(
+            f"🎟 <b>Ваш промокод создан</b>\n\n"
+            f"<code>{code}</code>\n\n"
+            f"📌 Активирует <b>Basic-подписку на 24 часа</b>\n"
+            f"⚠️ Действует <b>только для первого юзера</b>, кто введёт код."
+        )
+    else:
+        # Обычный юзер — вводит код
+        await callback.message.answer(
+            "🎟 <b>Активация промокода</b>\n\n"
+            "Введите промокод:"
+        )
+        await state.set_state(PromoStates.waiting_for_code)
+    await callback.answer()
+
+@router.message(PromoStates.waiting_for_code)
+async def process_promo_code(message: Message, state: FSMContext):
+    user = message.from_user
+    code = message.text.strip().upper()
+    await state.clear()
+
+    promo = db_get_promo(code)
+    if not promo:
+        await message.answer("❌ Промокод не найден.")
+        return
+
+    _, created_by, used_by, expires_at = promo
+
+    if used_by is not None:
+        await message.answer("❌ Этот промокод уже использован.")
+        return
+
+    # Активируем
+    db_use_promo(code, user.id)
+
+    await message.answer(
+        "✅ <b>Промокод активирован!</b>\n\n"
+        "💳 Basic-подписка выдана на <b>24 часа</b>.\n"
+        "Через сутки она слетит автоматически."
+    )
+
+    await notify_user(created_by, f"🎟 Ваш промокод <code>{code}</code> активирован юзером <code>{user.id}</code>.")
+
 # --- ЗЕРКАЛА ---
 @router.callback_query(F.data == "mirrors")
 async def mirrors_handler(callback: CallbackQuery, state: FSMContext):
@@ -474,6 +613,12 @@ async def profile_handler(callback: CallbackQuery):
         "vip": "Premium (400₽)",
         "basic": "Basic (250₽)",
     }.get(role, "Отсутствует")
+
+    exp = db_get_temp_sub(user.id)
+    if exp and exp > time.time() and role == "basic":
+        left = int(exp - time.time())
+        sub_text += f"\n⏳ Временная: {cd_format(left)}"
+
     await callback.message.answer(
         f"👤 Профиль\n\nЮзернейм: {username}\nID: <code>{user.id}</code>\nПодписка: {sub_text}"
     )
@@ -637,7 +782,7 @@ async def process_usual_report(message: Message, state: FSMContext):
     await asyncio.sleep(8)
     await message.answer("📩 Обычная жалоба\n✅ Жалоба успешно отправлена")
 
-# --- B@t m@tod (теперь доступен и Basic) ---
+# --- B@t m@tod (доступен Basic) ---
 @router.callback_query(F.data == "bot_method")
 async def start_bot_method(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
@@ -686,7 +831,7 @@ async def process_bot_link(message: Message, state: FSMContext):
     await asyncio.sleep(120)
     await message.answer("репорт доставлен")
 
-# --- AU REPORT (только VIP) ---
+# --- AU REPORT ---
 @router.callback_query(F.data == "au_report")
 async def au_report_start(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
@@ -752,8 +897,7 @@ async def process_au_username(message: Message, state: FSMContext):
         "▱▱▱▱▱▱▱▱▱▱  0%"
     )
 
-    # Прогресс 0–100% за 3–5 минут (случайно)
-    total_time = random.randint(180, 300)  # 3–5 минут
+    total_time = random.randint(180, 300)
     steps = 10
     step_time = total_time / steps
 
@@ -769,7 +913,6 @@ async def process_au_username(message: Message, state: FSMContext):
         except Exception:
             pass
 
-    # Удаляем сообщение с прогрессом
     try:
         await progress_msg.delete()
     except Exception:
@@ -882,7 +1025,26 @@ async def crypto_pay(callback: CallbackQuery):
     await callback.answer()
 
 # ==========================================================
-# 12. АДМИН-БОТ
+# 13. ФОНОВАЯ ЗАДАЧА: ПРОВЕРКА ВРЕМЕННЫХ ПОДПИСОК
+# ==========================================================
+async def temp_subs_loop():
+    while True:
+        await asyncio.sleep(60)  # раз в минуту
+        now = time.time()
+        for user_id, expires_at in db_get_temp_subs():
+            if now >= expires_at:
+                db_remove_temp_sub(user_id)
+                try:
+                    await bot.send_message(
+                        user_id,
+                        "⏳ Ваша временная Basic-подписка по промокоду истекла.\n\n"
+                        "Чтобы продолжить пользоваться — оформите подписку в разделе «Покупка»."
+                    )
+                except Exception:
+                    pass
+
+# ==========================================================
+# 14. АДМИН-БОТ
 # ==========================================================
 @admin_dp.message(CommandStart())
 async def admin_start(message: Message):
@@ -1062,11 +1224,12 @@ async def list_subs(message: Message):
     )
 
 # ==========================================================
-# 13. ЗАПУСК
+# 15. ЗАПУСК
 # ==========================================================
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
     init_db()
+    asyncio.create_task(temp_subs_loop())
     await asyncio.gather(
         dp.start_polling(bot),
         admin_dp.start_polling(admin_bot)
