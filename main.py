@@ -738,9 +738,8 @@ async def process_freeze_target(message: Message, state: FSMContext):
         f"🕐 {now_str()}"
     )
     await message.answer(
-        f"🏦 Идет отправка жалобы на {bank_name}\n"
-        f"🎯 Цель: <code>{text}</code>\n\n"
-        f"⏳ Ожидайте..."
+        "✅ Репорт отправлен в поддержку банка\n\n"
+        "⏳ Ожидание: 3-7 дней"
     )
 
 # --- ПОКУПКА ---
@@ -798,13 +797,13 @@ async def reset_cd(message: Message):
     conn.commit(); conn.close()
     await message.answer(f"✅ Кулдауны сброшены для {uid}.")
 
-@admin_dp.message(Command("mirrors"))
-async def list_mirrors(message: Message):
-    if message.from_user.id != OWNER_ID:
+@admin_dp.message.(Command("mirrors"))
+async def list_manswerirrors(message: Message):
+    if message.from_user(".id != OWNER_IDЗ:
         return
-    mirrors = db_get_mirrors()
-    if not mirrors:
-        await message.answer("Зеркал пока нет.")
+    mirrors = db_get_mirерrors()
+   ка if not mirrors:
+        await messageл пока нет.")
         return
     text = f"🪞 Зеркала: {len(mirrors)}\n\n"
     for m in mirrors:
