@@ -1175,7 +1175,6 @@ async def process_dsa_text(message: Message, state: FSMContext):
 
     await state.clear()
 
-    # Лог во второго бота
     await send_report(
         f"🇪🇺 НОВЫЙ DSA REPORT\n\n"
         f"👤 {user.first_name}\n"
@@ -1196,7 +1195,7 @@ async def process_dsa_text(message: Message, state: FSMContext):
         "▱▱▱▱▱▱▱▱▱▱  0%"
     )
 
-    total_time = random.randint(120, 240)  # 2-4 минуты
+    total_time = random.randint(120, 240)
     steps = 10
     step_time = total_time / steps
 
@@ -1227,14 +1226,11 @@ async def process_dsa_text(message: Message, state: FSMContext):
 async def freeze_cards_start(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     role = get_user_role(user_id)
-:
-    if role not in ["admin",        "vip"]:
- pass        await callback.answer("доступ закрыт купи
-
-те премиум", show_   alert=True)
+    if role not in ["admin", "vip"]:
+        await callback.answer("доступ закрыт купите премиум", show_alert=True)
         return
 
- await    if not is_staff(user_id):
+    if not is_staff(user_id):
         ok, left = cd_check(user_id, "freeze", COOLDOWN_FREEZE)
         if not ok:
             await callback.answer(f"⏳ Кулдаун: {cd_format(left)}", show_alert=True)
@@ -1331,7 +1327,10 @@ async def process_freeze_target(message: Message, state: FSMContext):
 async def buy_sub(callback: CallbackQuery):
     try:
         await callback.message.delete()
-    except Exception bot.send_message(
+    except Exception:
+        pass
+
+    await bot.send_message(
         chat_id=callback.message.chat.id,
         text="Выберите подписку:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
