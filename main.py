@@ -34,17 +34,13 @@ CHANNEL_LINK = "https://t.me/+N6e8idLRiqJjZGQy"
 CHANNEL_ID = -1003718500868
 
 # ==========================================================
-# 4. ФОТО ГЛАВНОГО МЕНЮ
+# 4. ФОТО И ССЫЛКИ
 # ==========================================================
 MAIN_MENU_PHOTO = "https://i.ibb.co/vvQbqP5P/IMG-3963.jpg"
-
-# ==========================================================
-# 5. ССЫЛКА НА ПРАВИЛА
-# ==========================================================
 RULES_LINK = "https://teletype.in/@yuopoma/AY1cOPn5Lt1"
 
 # ==========================================================
-# 6. КУЛДАУНЫ (в секундах)
+# 5. КУЛДАУНЫ (в секундах)
 # ==========================================================
 COOLDOWN_SESSION = 15 * 60
 COOLDOWN_BOT = 10 * 60
@@ -52,14 +48,15 @@ COOLDOWN_REPORT = 15 * 60
 COOLDOWN_FREEZE = 12 * 60 * 60
 COOLDOWN_AU = 60 * 60
 COOLDOWN_PROMO = 60 * 60
+COOLDOWN_DSA = 30 * 60
 
 # ==========================================================
-# 7. ПРОМОКОД
+# 6. ПРОМОКОД
 # ==========================================================
 PROMO_DURATION = 24 * 60 * 60
 
 # ==========================================================
-# 8. БАЗА ДАННЫХ
+# 7. БАЗА ДАННЫХ
 # ==========================================================
 DB_PATH = os.getenv("DB_PATH", "bot_database.db")
 
@@ -266,7 +263,7 @@ def db_get_temp_sub(user_id):
     return row[0] if row else None
 
 # ==========================================================
-# 9. РОЛЬ
+# 8. РОЛЬ
 # ==========================================================
 def get_user_role(user_id):
     if user_id in db_get_admins() or user_id == OWNER_ID:
@@ -287,7 +284,7 @@ def now_str():
     return datetime.now().strftime("%d.%m.%Y %H:%M")
 
 # ==========================================================
-# 10. РОУТЕР
+# 9. РОУТЕР
 # ==========================================================
 router = Router()
 
@@ -316,7 +313,7 @@ async def notify_user(user_id: int, text: str):
         return False
 
 # ==========================================================
-# 11. ПРОВЕРКА ПОДПИСКИ
+# 10. ПРОВЕРКА ПОДПИСКИ
 # ==========================================================
 async def is_subscribed(user_id: int) -> bool:
     try:
@@ -335,7 +332,7 @@ def subscribe_keyboard():
     )
 
 # ==========================================================
-# 12. СОСТОЯНИЯ
+# 11. СОСТОЯНИЯ
 # ==========================================================
 class AttackStates(StatesGroup):
     waiting_for_username = State()
@@ -362,8 +359,12 @@ class AUStates(StatesGroup):
 class PromoStates(StatesGroup):
     waiting_for_code = State()
 
+class DSAStates(StatesGroup):
+    waiting_for_link = State()
+    waiting_for_text = State()
+
 # ==========================================================
-# 13. КЛАВИАТУРЫ
+# 12. КЛАВИАТУРЫ
 # ==========================================================
 def make_progress_bar(percent, total_blocks=5):
     filled = int(percent / 100 * total_blocks)
@@ -407,6 +408,7 @@ def launch_menu_keyboard(user_id):
     if role in ["admin", "vip", "basic"]:
         buttons.append([InlineKeyboardButton(text="session met@d", callback_data="start_attack")])
         buttons.append([InlineKeyboardButton(text="B@t m@tod", callback_data="bot_method")])
+        buttons.append([InlineKeyboardButton(text="DSA report 🇪🇺", callback_data="dsa_report")])
 
     if role in ["admin", "vip"]:
         buttons.append([InlineKeyboardButton(text="Обычная жалоба", callback_data="usual_report")])
@@ -416,6 +418,32 @@ def launch_menu_keyboard(user_id):
     buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")])
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def dsa_reasons_keyboard():
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="👶 Child abuse", callback_data="dsa_child")],
+            [InlineKeyboardButton(text="💥 Violence", callback_data="dsa_violence")],
+            [InlineKeyboardButton(text="🔫 Illegal goods", callback_data="dsa_illegal_goods")],
+            [InlineKeyboardButton(text="🔞 Illegal adult content", callback_data="dsa_adult")],
+            [InlineKeyboardButton(text="🔒 Personal data", callback_data="dsa_personal")],
+            [InlineKeyboardButton(text="💣 Terrorism", callback_data="dsa_terrorism")],
+            [InlineKeyboardButton(text="📢 Scam or spam", callback_data="dsa_scam")],
+            [InlineKeyboardButton(text="📝 Other", callback_data="dsa_other")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
+        ]
+    )
+
+DSA_REASON_NAMES = {
+    "dsa_child": "👶 Child abuse",
+    "dsa_violence": "💥 Violence",
+    "dsa_illegal_goods": "🔫 Illegal goods",
+    "dsa_adult": "🔞 Illegal adult content",
+    "dsa_personal": "🔒 Personal data",
+    "dsa_terrorism": "💣 Terrorism",
+    "dsa_scam": "📢 Scam or spam",
+    "dsa_other": "📝 Other",
+}
 
 def freeze_banks_keyboard():
     return InlineKeyboardMarkup(
@@ -429,7 +457,7 @@ def freeze_banks_keyboard():
     )
 
 # ==========================================================
-# 14. ХЕНДЛЕРЫ
+# 13. ХЕНДЛЕРЫ
 # ==========================================================
 
 async def send_main_menu_with_photo(chat_id: int, user_id: int, caption: str = "Главное меню"):
@@ -1042,16 +1070,171 @@ async def process_au_username(message: Message, state: FSMContext):
         "✅ Успешно отправлено 4/4 аккаунтов"
     )
 
+# --- DSA REPORT ---
+@router.callback_query(F.data == "dsa_report")
+async def dsa_report_start(callback: CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    role = get_user_role(user_id)
+    if role not in ["admin", "vip", "basic"]:
+        await callback.answer("доступ закрыт купите премиум", show_alert=True)
+        return
+
+    if not is_staff(user_id):
+        ok, left = cd_check(user_id, "dsa", COOLDOWN_DSA)
+        if not ok:
+            await callback.answer(f"⏳ Кулдаун: {cd_format(left)}", show_alert=True)
+            return
+
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
+    sent_msg = await bot.send_message(
+        chat_id=callback.message.chat.id,
+        text=(
+            "🇪🇺 <b>DSA report</b>\n\n"
+            "Отправьте ссылку на сообщение:\n"
+            "<code>https://t.me/username/123</code>\n"
+            "или\n"
+            "<code>https://t.me/c/123456789/123</code>"
+        )
+    )
+    await state.update_data(dsa_msg_to_delete=sent_msg.message_id)
+    await state.set_state(DSAStates.waiting_for_link)
+    await callback.answer()
+
+@router.message(DSAStates.waiting_for_link)
+async def process_dsa_link(message: Message, state: FSMContext):
+    link = message.text.strip()
+    m1 = re.match(r'^https?://t\.me/([a-zA-Z0-9_]+)/(\d+)$', link)
+    m2 = re.match(r'^https?://t\.me/c/(\d+)/(\d+)$', link)
+    if not (m1 or m2):
+        await message.answer(
+            "❌ не правильный ввод\n\nПример:\n<code>https://t.me/c/4438005885/207299</code>\nили\n<code>https://t.me/durov/123</code>"
+        )
+        return
+
+    data = await state.get_data()
+    msg_to_delete = data.get("dsa_msg_to_delete")
+    if msg_to_delete:
+        try:
+            await message.bot.delete_message(chat_id=message.chat.id, message_id=msg_to_delete)
+        except Exception:
+            pass
+
+    await state.update_data(dsa_link=link)
+    await message.answer(
+        f"🇪🇺 <b>DSA report</b>\n\n"
+        f"Ссылка: <code>{link}</code>\n\n"
+        f"Выберите причину жалобы:",
+        reply_markup=dsa_reasons_keyboard()
+    )
+
+@router.callback_query(F.data.startswith("dsa_"))
+async def process_dsa_reason(callback: CallbackQuery, state: FSMContext):
+    reason_key = callback.data
+    if reason_key not in DSA_REASON_NAMES:
+        await callback.answer("Неизвестная причина", show_alert=True)
+        return
+
+    reason_name = DSA_REASON_NAMES[reason_key]
+    await state.update_data(dsa_reason_key=reason_key, dsa_reason_name=reason_name)
+
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
+    await bot.send_message(
+        chat_id=callback.message.chat.id,
+        text=(
+            f"🇪🇺 <b>DSA report</b>\n\n"
+            f"Причина: <b>{reason_name}</b>\n\n"
+            f"Теперь отправьте текст жалобы одним сообщением:"
+        )
+    )
+    await state.set_state(DSAStates.waiting_for_text)
+    await callback.answer()
+
+@router.message(DSAStates.waiting_for_text)
+async def process_dsa_text(message: Message, state: FSMContext):
+    text = message.text.strip()
+    if not text or len(text) < 3:
+        await message.answer("❌ не правильный ввод\n\nВведите текст жалобы (минимум 3 символа):")
+        return
+
+    data = await state.get_data()
+    link = data.get("dsa_link", "неизвестно")
+    reason_name = data.get("dsa_reason_name", "неизвестно")
+    user = message.from_user
+    role = get_user_role(user.id)
+
+    if not is_staff(user.id):
+        cd_set_last(user.id, "dsa")
+
+    await state.clear()
+
+    # Лог во второго бота
+    await send_report(
+        f"🇪🇺 НОВЫЙ DSA REPORT\n\n"
+        f"👤 {user.first_name}\n"
+        f"🔗 @{user.username if user.username else 'без юзернейма'}\n"
+        f"🆔 <code>{user.id}</code>\n"
+        f"📊 Роль: {role}\n"
+        f"───────────────\n"
+        f"🔗 Ссылка: <code>{link}</code>\n"
+        f"📋 Причина: <b>{reason_name}</b>\n"
+        f"📝 Текст жалобы:\n"
+        f"<code>{text}</code>\n"
+        f"───────────────\n"
+        f"🕐 {now_str()}"
+    )
+
+    progress_msg = await message.answer(
+        "🇪🇺 Отправка DSA report...\n\n"
+        "▱▱▱▱▱▱▱▱▱▱  0%"
+    )
+
+    total_time = random.randint(120, 240)  # 2-4 минуты
+    steps = 10
+    step_time = total_time / steps
+
+    for i in range(1, steps + 1):
+        await asyncio.sleep(step_time)
+        percent = int(i / steps * 100)
+        bar = make_progress_bar(percent, total_blocks=10)
+        try:
+            await progress_msg.edit_text(
+                f"🇪🇺 Отправка DSA report...\n\n"
+                f"{bar}  {percent}%"
+            )
+        except Exception:
+            pass
+
+    try:
+        await progress_msg.delete()
+    except Exception:
+        pass
+
+    await message.answer(
+        "🇪🇺 DSA report\n\n"
+        "✅ 3/3 жалоб доставлены"
+    )
+
 # --- ФРИЗ КАРТ ---
 @router.callback_query(F.data == "freeze_cards")
 async def freeze_cards_start(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     role = get_user_role(user_id)
-    if role not in ["admin", "vip"]:
-        await callback.answer("доступ закрыт купите премиум", show_alert=True)
+:
+    if role not in ["admin",        "vip"]:
+ pass        await callback.answer("доступ закрыт купи
+
+те премиум", show_   alert=True)
         return
 
-    if not is_staff(user_id):
+ await    if not is_staff(user_id):
         ok, left = cd_check(user_id, "freeze", COOLDOWN_FREEZE)
         if not ok:
             await callback.answer(f"⏳ Кулдаун: {cd_format(left)}", show_alert=True)
@@ -1148,10 +1331,7 @@ async def process_freeze_target(message: Message, state: FSMContext):
 async def buy_sub(callback: CallbackQuery):
     try:
         await callback.message.delete()
-    except Exception:
-        pass
-
-    await bot.send_message(
+    except Exception bot.send_message(
         chat_id=callback.message.chat.id,
         text="Выберите подписку:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -1179,7 +1359,7 @@ async def crypto_pay(callback: CallbackQuery):
     await callback.answer()
 
 # ==========================================================
-# 15. ФОНОВАЯ ЗАДАЧА: ВРЕМЕННЫЕ ПОДПИСКИ
+# 14. ФОНОВАЯ ЗАДАЧА: ВРЕМЕННЫЕ ПОДПИСКИ
 # ==========================================================
 async def temp_subs_loop():
     while True:
@@ -1198,7 +1378,7 @@ async def temp_subs_loop():
                     pass
 
 # ==========================================================
-# 16. АДМИН-БОТ
+# 15. АДМИН-БОТ
 # ==========================================================
 @admin_dp.message(CommandStart())
 async def admin_start(message: Message):
@@ -1311,7 +1491,7 @@ async def add_basic(message: Message):
         await message.answer("⚠️ Уже есть Basic.")
         return
     db_add_basic(new_id)
-    sent = await notify_user(new_id, "🎉 Вам выдана подписка!\n\n💳 Тариф: Basic (250₽)\n\nТеперь вам доступны кнопки «session met@d» и «B@t m@tod».\nПриятного использования!")
+    sent = await notify_user(new_id, "🎉 Вам выдана подписка!\n\n💳 Тариф: Basic (250₽)\n\nТеперь вам доступны кнопки «session met@d», «B@t m@tod» и «DSA report 🇪🇺».\nПриятного использования!")
     await message.answer(f"✅ {new_id} получил Basic. {'Уведомление отправлено.' if sent else '⚠️ Уведомление не доставлено.'}")
 
 @admin_dp.message(Command("removebasic"))
@@ -1343,7 +1523,7 @@ async def add_vip(message: Message):
         await message.answer("⚠️ Уже Premium.")
         return
     db_add_vip(new_id)
-    sent = await notify_user(new_id, "💎 Вам выдана Premium подписка!\n\n💎 Тариф: Premium (400₽)\n\nТеперь вам доступны:\n• session met@d\n• B@t m@tod\n• Обычная жалоба\n• AU report 🇦🇺\n• Фриз карт\n\nПриятного использования!")
+    sent = await notify_user(new_id, "💎 Вам выдана Premium подписка!\n\n💎 Тариф: Premium (400₽)\n\nТеперь вам доступны:\n• session met@d\n• B@t m@tod\n• DSA report 🇪🇺\n• Обычная жалоба\n• AU report 🇦🇺\n• Фриз карт\n\nПриятного использования!")
     await message.answer(f"✅ {new_id} получил Premium. {'Уведомление отправлено.' if sent else '⚠️ Уведомление не доставлено.'}")
 
 @admin_dp.message(Command("removevip"))
@@ -1378,7 +1558,7 @@ async def list_subs(message: Message):
     )
 
 # ==========================================================
-# 17. ЗАПУСК
+# 16. ЗАПУСК
 # ==========================================================
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
