@@ -46,7 +46,7 @@ COOLDOWN_PROMO = 60 * 60
 # ==========================================================
 # 5. ПРОМОКОД
 # ==========================================================
-PROMO_DURATION = 24 * 60 * 60  # 24 часа
+PROMO_DURATION = 24 * 60 * 60
 
 # ==========================================================
 # 6. БАЗА ДАННЫХ
@@ -204,8 +204,6 @@ def cd_format(seconds):
     if s or not parts: parts.append(f"{s} сек.")
     return " ".join(parts)
 
-# ----- ПРОМОКОДЫ -----
-
 def gen_promo_code(length=10):
     chars = string.ascii_uppercase + string.digits
     return "".join(random.choice(chars) for _ in range(length))
@@ -267,7 +265,6 @@ def get_user_role(user_id):
         return "vip"
     if user_id in db_get_basic():
         return "basic"
-    # Проверка временной подписки
     exp = db_get_temp_sub(user_id)
     if exp and exp > time.time():
         return "basic"
@@ -406,6 +403,21 @@ def freeze_banks_keyboard():
 # 12. ХЕНДЛЕРЫ
 # ==========================================================
 
+async def send_main_menu_with_photo(chat_id: int, caption: str = "Главное меню"):
+    PHOTO_URL = "https://i.postimg.cc/BnWNfr6N/IMG-3869.jpg"
+    await bot.send_photo(chat_id=chat_id, photo=PHOTO_URL, caption=caption, reply_markup=main_menu_keyboard())
+
+async def clear_chat_keep_menu(callback: CallbackQuery, state: FSMContext):
+    """Удаляет все сообщения в чате, кроме главного меню, и присылает меню заново."""
+    chat_id = callback.message.chat.id
+    # Удаляем сообщение, на котором нажали кнопку
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    # Отправляем заново главное меню с картинкой
+    await send_main_menu_with_photo(chat_id)
+
 @router.message(CommandStart())
 async def command_start_handler(message: Message, state: FSMContext) -> None:
     user = message.from_user
@@ -429,8 +441,7 @@ async def command_start_handler(message: Message, state: FSMContext) -> None:
 
     data = await state.get_data()
     if data.get("captcha_passed"):
-        PHOTO_URL = "https://i.postimg.cc/BnWNfr6N/IMG-3869.jpg"
-        await message.answer_photo(photo=PHOTO_URL, caption="Главное меню", reply_markup=main_menu_keyboard())
+        await send_main_menu_with_photo(message.chat.id)
         return
 
     a = random.randint(1, 9)
@@ -464,8 +475,7 @@ async def check_subscription(callback: CallbackQuery, state: FSMContext):
 
     data = await state.get_data()
     if data.get("captcha_passed"):
-        PHOTO_URL = "https://i.postimg.cc/BnWNfr6N/IMG-3869.jpg"
-        await callback.message.answer_photo(photo=PHOTO_URL, caption="Главное меню", reply_markup=main_menu_keyboard())
+        await send_main_menu_with_photo(callback.message.chat.id)
         return
 
     a = random.randint(1, 9)
@@ -487,21 +497,27 @@ async def captcha_answer(message: Message, state: FSMContext):
         return
     await state.update_data(captcha_passed=True, captcha_answer=None)
     await state.set_state(None)
-    PHOTO_URL = "https://i.postimg.cc/BnWNfr6N/IMG-3869.jpg"
-    await message.answer_photo(photo=PHOTO_URL, caption="Главное меню", reply_markup=main_menu_keyboard())
+    await send_main_menu_with_photo(message.chat.id)
 
 # --- МЕНЮ ЗАПУСКА ---
 @router.callback_query(F.data == "launch_menu")
 async def launch_menu(callback: CallbackQuery):
-    await callback.message.answer(
-        "🚀 <b>Запуск</b>\n\nВыберите инструмент:",
+    # Удаляем предыдущее сообщение
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    await bot.send_message(
+        chat_id=callback.message.chat.id,
+        text="🚀 <b>Запуск</b>\n\nВыберите инструмент:",
         reply_markup=launch_menu_keyboard()
     )
     await callback.answer()
 
 @router.callback_query(F.data == "back_to_main")
-async def back_to_main(callback: CallbackQuery):
-    await callback.message.answer("Главное меню", reply_markup=main_menu_keyboard())
+async def back_to_main(callback: CallbackQuery, state: FSMContext):
+    # Удаляем всё и возвращаем главное меню с картинкой
+    await clear_chat_keep_menu(callback, state)
     await callback.answer()
 
 # --- ПРОМОКОДЫ ---
@@ -510,8 +526,13 @@ async def promo_menu(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     role = get_user_role(user_id)
 
+    # Удаляем предыдущее сообщение
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
     if role == "admin":
-        # Админ — генерируем промокод
         if not is_staff(user_id):
             ok, left = cd_check(user_id, "promo", COOLDOWN_PROMO)
             if not ok:
@@ -520,17 +541,22 @@ async def promo_menu(callback: CallbackQuery, state: FSMContext):
         code = db_create_promo(user_id)
         if not is_staff(user_id):
             cd_set_last(user_id, "promo")
-        await callback.message.answer(
-            f"🎟 <b>Ваш промокод создан</b>\n\n"
-            f"<code>{code}</code>\n\n"
-            f"📌 Активирует <b>Basic-подписку на 24 часа</b>\n"
-            f"⚠️ Действует <b>только для первого юзера</b>, кто введёт код."
+        await bot.send_message(
+            chat_id=callback.message.chat.id,
+            text=(
+                f"🎟 <b>Ваш промокод создан</b>\n\n"
+                f"<code>{code}</code>\n\n"
+                f"📌 Активирует <b>Basic-подписку на 24 часа</b>\n"
+                f"⚠️ Действует <b>только для первого юзера</b>, кто введёт код."
+            ),
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
+            ])
         )
     else:
-        # Обычный юзер — вводит код
-        await callback.message.answer(
-            "🎟 <b>Активация промокода</b>\n\n"
-            "Введите промокод:"
+        await bot.send_message(
+            chat_id=callback.message.chat.id,
+            text="🎟 <b>Активация промокода</b>\n\nВведите промокод:"
         )
         await state.set_state(PromoStates.waiting_for_code)
     await callback.answer()
@@ -552,7 +578,6 @@ async def process_promo_code(message: Message, state: FSMContext):
         await message.answer("❌ Этот промокод уже использован.")
         return
 
-    # Активируем
     db_use_promo(code, user.id)
 
     await message.answer(
@@ -569,10 +594,20 @@ async def mirrors_handler(callback: CallbackQuery, state: FSMContext):
     if get_user_role(callback.from_user.id) != "admin":
         await callback.answer("доступ закрыт купите премиум", show_alert=True)
         return
-    await callback.message.answer(
-        "🪞 Создание зеркала\n\n"
-        "Отправьте токен нового бота (получите его у @BotFather).\n"
-        "Формат: <code>123456789:AAxxxxxxxxxxxxxxxxxxxxxx</code>"
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    await bot.send_message(
+        chat_id=callback.message.chat.id,
+        text=(
+            "🪞 Создание зеркала\n\n"
+            "Отправьте токен нового бота (получите его у @BotFather).\n"
+            "Формат: <code>123456789:AAxxxxxxxxxxxxxxxxxxxxxx</code>"
+        ),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
+        ])
     )
     await state.set_state(MirrorStates.waiting_for_token)
     await callback.answer()
@@ -619,8 +654,17 @@ async def profile_handler(callback: CallbackQuery):
         left = int(exp - time.time())
         sub_text += f"\n⏳ Временная: {cd_format(left)}"
 
-    await callback.message.answer(
-        f"👤 Профиль\n\nЮзернейм: {username}\nID: <code>{user.id}</code>\nПодписка: {sub_text}"
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
+    await bot.send_message(
+        chat_id=callback.message.chat.id,
+        text=f"👤 Профиль\n\nЮзернейм: {username}\nID: <code>{user.id}</code>\nПодписка: {sub_text}",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
+        ])
     )
     await callback.answer()
 
@@ -639,10 +683,18 @@ async def start_attack(callback: CallbackQuery, state: FSMContext):
             await callback.answer(f"⏳ Кулдаун: {cd_format(left)}", show_alert=True)
             return
 
-    sent_msg = await callback.message.answer(
-        "📵 Session met@d · новый запрос\n"
-        "Введите цель: @username или id123456.\n"
-        "Пример: @durov или id987654321."
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
+    sent_msg = await bot.send_message(
+        chat_id=callback.message.chat.id,
+        text=(
+            "📵 Session met@d · новый запрос\n"
+            "Введите цель: @username или id123456.\n"
+            "Пример: @durov или id987654321."
+        )
     )
     await state.update_data(msg_to_delete=sent_msg.message_id)
     await state.set_state(AttackStates.waiting_for_username)
@@ -731,12 +783,20 @@ async def usual_report_start(callback: CallbackQuery, state: FSMContext):
             await callback.answer(f"⏳ Кулдаун: {cd_format(left)}", show_alert=True)
             return
 
-    await callback.message.answer(
-        "📩 Обычная жалоба\n\n"
-        "Отправьте ссылку на сообщение в формате:\n"
-        "<code>https://t.me/username/123</code>\n"
-        "или\n"
-        "<code>https://t.me/c/123456789/123</code>"
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
+    await bot.send_message(
+        chat_id=callback.message.chat.id,
+        text=(
+            "📩 Обычная жалоба\n\n"
+            "Отправьте ссылку на сообщение в формате:\n"
+            "<code>https://t.me/username/123</code>\n"
+            "или\n"
+            "<code>https://t.me/c/123456789/123</code>"
+        )
     )
     await state.set_state(ReportStates.waiting_for_link)
     await callback.answer()
@@ -782,7 +842,7 @@ async def process_usual_report(message: Message, state: FSMContext):
     await asyncio.sleep(8)
     await message.answer("📩 Обычная жалоба\n✅ Жалоба успешно отправлена")
 
-# --- B@t m@tod (доступен Basic) ---
+# --- B@t m@tod ---
 @router.callback_query(F.data == "bot_method")
 async def start_bot_method(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
@@ -797,9 +857,17 @@ async def start_bot_method(callback: CallbackQuery, state: FSMContext):
             await callback.answer(f"⏳ Кулдаун: {cd_format(left)}", show_alert=True)
             return
 
-    await callback.message.answer(
-        "Введите юзернейм бота (пример: @durov_bot).\n"
-        "Важно: юзернейм должен заканчиваться на 'bot'."
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
+    await bot.send_message(
+        chat_id=callback.message.chat.id,
+        text=(
+            "Введите юзернейм бота (пример: @durov_bot).\n"
+            "Важно: юзернейм должен заканчиваться на 'bot'."
+        )
     )
     await state.set_state(BotMethodStates.waiting_for_bot_link)
     await callback.answer()
@@ -846,9 +914,17 @@ async def au_report_start(callback: CallbackQuery, state: FSMContext):
             await callback.answer(f"⏳ Кулдаун: {cd_format(left)}", show_alert=True)
             return
 
-    sent_msg = await callback.message.answer(
-        "🇦🇺 AU report · новый запрос\n"
-        "Введите юзернейм цели (пример: @durov)."
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
+    sent_msg = await bot.send_message(
+        chat_id=callback.message.chat.id,
+        text=(
+            "🇦🇺 AU report · новый запрос\n"
+            "Введите юзернейм цели (пример: @durov)."
+        )
     )
     await state.update_data(au_msg_to_delete=sent_msg.message_id)
     await state.set_state(AUStates.waiting_for_username)
@@ -938,7 +1014,16 @@ async def freeze_cards_start(callback: CallbackQuery, state: FSMContext):
             await callback.answer(f"⏳ Кулдаун: {cd_format(left)}", show_alert=True)
             return
 
-    await callback.message.answer("🏦 Выберите банк:", reply_markup=freeze_banks_keyboard())
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
+    await bot.send_message(
+        chat_id=callback.message.chat.id,
+        text="🏦 Выберите банк:",
+        reply_markup=freeze_banks_keyboard()
+    )
     await callback.answer()
 
 @router.callback_query(F.data.startswith("freeze_"))
@@ -957,12 +1042,21 @@ async def freeze_bank_selected(callback: CallbackQuery, state: FSMContext):
     if not bank_name:
         await callback.answer("Неизвестный банк", show_alert=True)
         return
+
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
     await state.update_data(freeze_bank=bank_name)
     await state.set_state(FreezeStates.waiting_for_target)
-    await callback.message.answer(
-        f"🏦 {bank_name}\n\n"
-        "└─ Введите номер телефона или карты цели:\n\n"
-        "+79991234567 или 4276 1234 5678 9012"
+    await bot.send_message(
+        chat_id=callback.message.chat.id,
+        text=(
+            f"🏦 {bank_name}\n\n"
+            "└─ Введите номер телефона или карты цели:\n\n"
+            "+79991234567 или 4276 1234 5678 9012"
+        )
     )
     await callback.answer()
 
@@ -1009,27 +1103,44 @@ async def process_freeze_target(message: Message, state: FSMContext):
 # --- ПОКУПКА ---
 @router.callback_query(F.data == "buy_sub")
 async def buy_sub(callback: CallbackQuery):
-    await callback.message.answer(
-        "Выберите подписку:",
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
+    await bot.send_message(
+        chat_id=callback.message.chat.id,
+        text="Выберите подписку:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="basic 250руб", url="https://t.me/yuopoma")],
             [InlineKeyboardButton(text="premium 400", url="https://t.me/yuopoma")],
-            [InlineKeyboardButton(text="Крипта", callback_data="crypto_pay")]
+            [InlineKeyboardButton(text="Крипта", callback_data="crypto_pay")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
         ])
     )
     await callback.answer()
 
 @router.callback_query(F.data == "crypto_pay")
 async def crypto_pay(callback: CallbackQuery):
-    await callback.message.answer("💎 Оплата пока не добавлена\n\nНапишите @yuopoma")
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    await bot.send_message(
+        chat_id=callback.message.chat.id,
+        text="💎 Оплата пока не добавлена\n\nНапишите @yuopoma",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
+        ])
+    )
     await callback.answer()
 
 # ==========================================================
-# 13. ФОНОВАЯ ЗАДАЧА: ПРОВЕРКА ВРЕМЕННЫХ ПОДПИСОК
+# 13. ФОНОВАЯ ЗАДАЧА: ВРЕМЕННЫЕ ПОДПИСКИ
 # ==========================================================
 async def temp_subs_loop():
     while True:
-        await asyncio.sleep(60)  # раз в минуту
+        await asyncio.sleep(60)
         now = time.time()
         for user_id, expires_at in db_get_temp_subs():
             if now >= expires_at:
