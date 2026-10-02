@@ -45,7 +45,7 @@ COOLDOWN_SESSION = 15 * 60
 COOLDOWN_BOT = 10 * 60
 COOLDOWN_REPORT = 15 * 60
 COOLDOWN_FREEZE = 12 * 60 * 60
-COOLDOWN_AU = 30 * 60
+COOLDOWN_AU = 60 * 60
 COOLDOWN_PROMO = 60 * 60
 
 # ==========================================================
@@ -364,34 +364,51 @@ def make_progress_bar(percent, total_blocks=5):
     filled = int(percent / 100 * total_blocks)
     return "▰" * filled + "▱" * (total_blocks - filled)
 
-def main_menu_keyboard():
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="Запуск 🚀", callback_data="launch_menu")],
-            [InlineKeyboardButton(text="Промокоды 🎟", callback_data="promo_menu")],
-            [
-                InlineKeyboardButton(text="Покупка", callback_data="buy_sub"),
-                InlineKeyboardButton(text="Профиль", callback_data="profile")
-            ],
-            [InlineKeyboardButton(text="Зеркала", callback_data="mirrors")],
-            [
-                InlineKeyboardButton(text="Наш канал", url=CHANNEL_LINK),
-                InlineKeyboardButton(text="Работы", url="https://t.me/+bUkMsYZDc2o3YzRl")
-            ]
-        ]
-    )
+def main_menu_keyboard(user_id):
+    role = get_user_role(user_id)
 
-def launch_menu_keyboard():
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="session met@d", callback_data="start_attack")],
-            [InlineKeyboardButton(text="Обычная жалоба", callback_data="usual_report")],
-            [InlineKeyboardButton(text="B@t m@tod", callback_data="bot_method")],
-            [InlineKeyboardButton(text="AU report 🇦🇺", callback_data="au_report")],
-            [InlineKeyboardButton(text="Фриз карт", callback_data="freeze_cards")],
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
-        ]
-    )
+    kb = [
+        [InlineKeyboardButton(text="Запуск 🚀", callback_data="launch_menu")],
+        [InlineKeyboardButton(text="Промокоды 🎟", callback_data="promo_menu")],
+    ]
+
+    if role != "admin":
+        kb.append([
+            InlineKeyboardButton(text="Покупка", callback_data="buy_sub"),
+            InlineKeyboardButton(text="Профиль", callback_data="profile")
+        ])
+    else:
+        kb.append([
+            InlineKeyboardButton(text="Профиль", callback_data="profile"),
+            InlineKeyboardButton(text="Зеркала", callback_data="mirrors")
+        ])
+
+    if role != "admin":
+        kb.append([InlineKeyboardButton(text="Зеркала", callback_data="mirrors")])
+
+    kb.append([
+        InlineKeyboardButton(text="Наш канал", url=CHANNEL_LINK),
+        InlineKeyboardButton(text="Работы", url="https://t.me/+bUkMsYZDc2o3YzRl")
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=kb)
+
+def launch_menu_keyboard(user_id):
+    role = get_user_role(user_id)
+    buttons = []
+
+    if role in ["admin", "vip", "basic"]:
+        buttons.append([InlineKeyboardButton(text="session met@d", callback_data="start_attack")])
+        buttons.append([InlineKeyboardButton(text="B@t m@tod", callback_data="bot_method")])
+
+    if role in ["admin", "vip"]:
+        buttons.append([InlineKeyboardButton(text="Обычная жалоба", callback_data="usual_report")])
+        buttons.append([InlineKeyboardButton(text="AU report 🇦🇺", callback_data="au_report")])
+        buttons.append([InlineKeyboardButton(text="Фриз карт", callback_data="freeze_cards")])
+
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")])
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def freeze_banks_keyboard():
     return InlineKeyboardMarkup(
@@ -408,21 +425,22 @@ def freeze_banks_keyboard():
 # 13. ХЕНДЛЕРЫ
 # ==========================================================
 
-async def send_main_menu_with_photo(chat_id: int, caption: str = "Главное меню"):
+async def send_main_menu_with_photo(chat_id: int, user_id: int, caption: str = "Главное меню"):
     await bot.send_photo(
         chat_id=chat_id,
         photo=MAIN_MENU_PHOTO,
         caption=caption,
-        reply_markup=main_menu_keyboard()
+        reply_markup=main_menu_keyboard(user_id)
     )
 
 async def clear_chat_keep_menu(callback: CallbackQuery, state: FSMContext):
     chat_id = callback.message.chat.id
+    user_id = callback.from_user.id
     try:
         await callback.message.delete()
     except Exception:
         pass
-    await send_main_menu_with_photo(chat_id)
+    await send_main_menu_with_photo(chat_id, user_id)
 
 @router.message(CommandStart())
 async def command_start_handler(message: Message, state: FSMContext) -> None:
@@ -447,7 +465,7 @@ async def command_start_handler(message: Message, state: FSMContext) -> None:
 
     data = await state.get_data()
     if data.get("captcha_passed"):
-        await send_main_menu_with_photo(message.chat.id)
+        await send_main_menu_with_photo(message.chat.id, user.id)
         return
 
     a = random.randint(1, 9)
@@ -481,7 +499,7 @@ async def check_subscription(callback: CallbackQuery, state: FSMContext):
 
     data = await state.get_data()
     if data.get("captcha_passed"):
-        await send_main_menu_with_photo(callback.message.chat.id)
+        await send_main_menu_with_photo(callback.message.chat.id, user.id)
         return
 
     a = random.randint(1, 9)
@@ -503,7 +521,7 @@ async def captcha_answer(message: Message, state: FSMContext):
         return
     await state.update_data(captcha_passed=True, captcha_answer=None)
     await state.set_state(None)
-    await send_main_menu_with_photo(message.chat.id)
+    await send_main_menu_with_photo(message.chat.id, message.from_user.id)
 
 # --- МЕНЮ ЗАПУСКА ---
 @router.callback_query(F.data == "launch_menu")
@@ -512,10 +530,25 @@ async def launch_menu(callback: CallbackQuery):
         await callback.message.delete()
     except Exception:
         pass
+
+    user_id = callback.from_user.id
+    role = get_user_role(user_id)
+
+    if role == "none":
+        await bot.send_message(
+            chat_id=callback.message.chat.id,
+            text="❌ У вас нет активной подписки.\n\nОформите её в разделе «Покупка».",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
+            ])
+        )
+        await callback.answer()
+        return
+
     await bot.send_message(
         chat_id=callback.message.chat.id,
         text="🚀 <b>Запуск</b>\n\nВыберите инструмент:",
-        reply_markup=launch_menu_keyboard()
+        reply_markup=launch_menu_keyboard(user_id)
     )
     await callback.answer()
 
