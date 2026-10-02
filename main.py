@@ -39,7 +39,12 @@ CHANNEL_ID = -1003718500868
 MAIN_MENU_PHOTO = "https://i.ibb.co/vvQbqP5P/IMG-3963.jpg"
 
 # ==========================================================
-# 5. КУЛДАУНЫ (в секундах)
+# 5. ССЫЛКА НА ПРАВИЛА
+# ==========================================================
+RULES_LINK = "https://teletype.in/@yuopoma/AY1cOPn5Lt1"
+
+# ==========================================================
+# 6. КУЛДАУНЫ (в секундах)
 # ==========================================================
 COOLDOWN_SESSION = 15 * 60
 COOLDOWN_BOT = 10 * 60
@@ -49,12 +54,12 @@ COOLDOWN_AU = 60 * 60
 COOLDOWN_PROMO = 60 * 60
 
 # ==========================================================
-# 6. ПРОМОКОД
+# 7. ПРОМОКОД
 # ==========================================================
 PROMO_DURATION = 24 * 60 * 60
 
 # ==========================================================
-# 7. БАЗА ДАННЫХ
+# 8. БАЗА ДАННЫХ
 # ==========================================================
 DB_PATH = os.getenv("DB_PATH", "bot_database.db")
 
@@ -261,7 +266,7 @@ def db_get_temp_sub(user_id):
     return row[0] if row else None
 
 # ==========================================================
-# 8. РОЛЬ
+# 9. РОЛЬ
 # ==========================================================
 def get_user_role(user_id):
     if user_id in db_get_admins() or user_id == OWNER_ID:
@@ -282,7 +287,7 @@ def now_str():
     return datetime.now().strftime("%d.%m.%Y %H:%M")
 
 # ==========================================================
-# 9. РОУТЕР
+# 10. РОУТЕР
 # ==========================================================
 router = Router()
 
@@ -311,7 +316,7 @@ async def notify_user(user_id: int, text: str):
         return False
 
 # ==========================================================
-# 10. ПРОВЕРКА ПОДПИСКИ
+# 11. ПРОВЕРКА ПОДПИСКИ
 # ==========================================================
 async def is_subscribed(user_id: int) -> bool:
     try:
@@ -330,7 +335,7 @@ def subscribe_keyboard():
     )
 
 # ==========================================================
-# 11. СОСТОЯНИЯ
+# 12. СОСТОЯНИЯ
 # ==========================================================
 class AttackStates(StatesGroup):
     waiting_for_username = State()
@@ -358,7 +363,7 @@ class PromoStates(StatesGroup):
     waiting_for_code = State()
 
 # ==========================================================
-# 12. КЛАВИАТУРЫ
+# 13. КЛАВИАТУРЫ
 # ==========================================================
 def make_progress_bar(percent, total_blocks=5):
     filled = int(percent / 100 * total_blocks)
@@ -385,6 +390,8 @@ def main_menu_keyboard(user_id):
 
     if role != "admin":
         kb.append([InlineKeyboardButton(text="Зеркала", callback_data="mirrors")])
+
+    kb.append([InlineKeyboardButton(text="Правила бота 📜", url=RULES_LINK)])
 
     kb.append([
         InlineKeyboardButton(text="Наш канал", url=CHANNEL_LINK),
@@ -422,7 +429,7 @@ def freeze_banks_keyboard():
     )
 
 # ==========================================================
-# 13. ХЕНДЛЕРЫ
+# 14. ХЕНДЛЕРЫ
 # ==========================================================
 
 async def send_main_menu_with_photo(chat_id: int, user_id: int, caption: str = "Главное меню"):
@@ -1172,7 +1179,7 @@ async def crypto_pay(callback: CallbackQuery):
     await callback.answer()
 
 # ==========================================================
-# 14. ФОНОВАЯ ЗАДАЧА: ВРЕМЕННЫЕ ПОДПИСКИ
+# 15. ФОНОВАЯ ЗАДАЧА: ВРЕМЕННЫЕ ПОДПИСКИ
 # ==========================================================
 async def temp_subs_loop():
     while True:
@@ -1191,7 +1198,7 @@ async def temp_subs_loop():
                     pass
 
 # ==========================================================
-# 15. АДМИН-БОТ
+# 16. АДМИН-БОТ
 # ==========================================================
 @admin_dp.message(CommandStart())
 async def admin_start(message: Message):
@@ -1371,7 +1378,7 @@ async def list_subs(message: Message):
     )
 
 # ==========================================================
-# 16. ЗАПУСК
+# 17. ЗАПУСК
 # ==========================================================
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
