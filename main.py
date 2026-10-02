@@ -797,13 +797,13 @@ async def reset_cd(message: Message):
     conn.commit(); conn.close()
     await message.answer(f"✅ Кулдауны сброшены для {uid}.")
 
-@admin_dp.message.(Command("mirrors"))
-async def list_manswerirrors(message: Message):
-    if message.from_user(".id != OWNER_IDЗ:
+@admin_dp.message(Command("mirrors"))
+async def list_mirrors(message: Message):
+    if message.from_user.id != OWNER_ID:
         return
-    mirrors = db_get_mirерrors()
-   ка if not mirrors:
-        await messageл пока нет.")
+    mirrors = db_get_mirrors()
+    if not mirrors:
+        await message.answer("Зеркал пока нет.")
         return
     text = f"🪞 Зеркала: {len(mirrors)}\n\n"
     for m in mirrors:
