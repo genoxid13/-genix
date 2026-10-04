@@ -49,6 +49,7 @@ COOLDOWN_FREEZE = 12 * 60 * 60
 COOLDOWN_AU = 60 * 60
 COOLDOWN_PROMO = 60 * 60
 COOLDOWN_DSA = 30 * 60
+COOLDOWN_STRESS = 30 * 60
 
 # ==========================================================
 # 6. ПРОМОКОД
@@ -363,6 +364,9 @@ class DSAStates(StatesGroup):
     waiting_for_link = State()
     waiting_for_text = State()
 
+class StressStates(StatesGroup):
+    waiting_for_target = State()
+
 # ==========================================================
 # 12. КЛАВИАТУРЫ
 # ==========================================================
@@ -409,6 +413,7 @@ def launch_menu_keyboard(user_id):
         buttons.append([InlineKeyboardButton(text="session met@d", callback_data="start_attack")])
         buttons.append([InlineKeyboardButton(text="B@t m@tod", callback_data="bot_method")])
         buttons.append([InlineKeyboardButton(text="DSA report 🇪🇺", callback_data="dsa_report")])
+        buttons.append([InlineKeyboardButton(text="Стрессер ⚡", callback_data="stress_menu")])
 
     if role in ["admin", "vip"]:
         buttons.append([InlineKeyboardButton(text="Обычная жалоба", callback_data="usual_report")])
@@ -1221,6 +1226,106 @@ async def process_dsa_text(message: Message, state: FSMContext):
         "✅ 3/3 жалоб доставлены"
     )
 
+# --- СТРЕССЕР ---
+@router.callback_query(F.data == "stress_menu")
+async def stress_menu(callback: CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    role = get_user_role(user_id)
+    if role not in ["admin", "vip", "basic"]:
+        await callback.answer("доступ закрыт купите премиум", show_alert=True)
+        return
+
+    if not is_staff(user_id):
+        ok, left = cd_check(user_id, "stress", COOLDOWN_STRESS)
+        if not ok:
+            await callback.answer(f"⏳ Кулдаун: {cd_format(left)}", show_alert=True)
+            return
+
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
+    sent_msg = await bot.send_message(
+        chat_id=callback.message.chat.id,
+        text=(
+            "⚡ <b>Стрессер</b>\n\n"
+            "Отправьте IP или домен цели:\n"
+            "<code>193.108.118.17</code>\n"
+            "или\n"
+            "<code>example.com</code>"
+        )
+    )
+    await state.update_data(stress_msg_to_delete=sent_msg.message_id)
+    await state.set_state(StressStates.waiting_for_target)
+    await callback.answer()
+
+@router.message(StressStates.waiting_for_target)
+async def process_stress_target(message: Message, state: FSMContext):
+    text = message.text.strip()
+
+    ip_pattern = re.match(r'^(\d{1,3}\.){3}\d{1,3}$', text)
+    domain_pattern = re.match(r'^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$', text)
+
+    is_valid_ip = False
+    if ip_pattern:
+        parts = text.split(".")
+        if all(0 <= int(p) <= 255 for p in parts):
+            is_valid_ip = True
+
+    is_valid_domain = bool(domain_pattern)
+
+    if not (is_valid_ip or is_valid_domain):
+        await message.answer(
+            "❌ не правильный ввод\n\n"
+            "Отправьте корректный IP или домен:\n"
+            "<code>193.108.118.17</code>\n"
+            "или\n"
+            "<code>example.com</code>"
+        )
+        return
+
+    data = await state.get_data()
+    msg_to_delete = data.get("stress_msg_to_delete")
+    if msg_to_delete:
+        try:
+            await message.bot.delete_message(chat_id=message.chat.id, message_id=msg_to_delete)
+        except Exception:
+            pass
+
+    user = message.from_user
+    role = get_user_role(user.id)
+
+    if not is_staff(user.id):
+        cd_set_last(user.id, "stress")
+
+    await state.clear()
+
+    # Случайный порт
+    rand_port = random.randint(1000, 65535)
+    target_with_port = f"{text}:{rand_port}"
+
+    # Лог во второго бота
+    await send_report(
+        f"⚡ НОВЫЙ СТРЕССЕР\n\n"
+        f"👤 {user.first_name}\n"
+        f"🔗 @{user.username if user.username else 'без юзернейма'}\n"
+        f"🆔 <code>{user.id}</code>\n"
+        f"📊 Роль: {role}\n"
+        f"───────────────\n"
+        f"🎯 Цель: <code>{target_with_port}</code>\n"
+        f"───────────────\n"
+        f"🕐 {now_str()}"
+    )
+
+    await message.answer(
+        f"✅ <b>Атака запущена!</b>\n\n"
+        f"🤖 Ботов: 31\n"
+        f"🎯 Цель: <code>{target_with_port}</code>\n"
+        f"⚙️ Тип: TCP-GBPS (тяжёлые пакеты)\n"
+        f"⏱ Время: 300 сек"
+    )
+
 # --- ФРИЗ КАРТ ---
 @router.callback_query(F.data == "freeze_cards")
 async def freeze_cards_start(callback: CallbackQuery, state: FSMContext):
@@ -1490,7 +1595,7 @@ async def add_basic(message: Message):
         await message.answer("⚠️ Уже есть Basic.")
         return
     db_add_basic(new_id)
-    sent = await notify_user(new_id, "🎉 Вам выдана подписка!\n\n💳 Тариф: Basic (250₽)\n\nТеперь вам доступны кнопки «session met@d», «B@t m@tod» и «DSA report 🇪🇺».\nПриятного использования!")
+    sent = await notify_user(new_id, "🎉 Вам выдана подписка!\n\n💳 Тариф: Basic (250₽)\n\nТеперь вам доступны кнопки «session met@d», «B@t m@tod», «DSA report 🇪🇺» и «Стрессер ⚡».\nПриятного использования!")
     await message.answer(f"✅ {new_id} получил Basic. {'Уведомление отправлено.' if sent else '⚠️ Уведомление не доставлено.'}")
 
 @admin_dp.message(Command("removebasic"))
@@ -1522,7 +1627,7 @@ async def add_vip(message: Message):
         await message.answer("⚠️ Уже Premium.")
         return
     db_add_vip(new_id)
-    sent = await notify_user(new_id, "💎 Вам выдана Premium подписка!\n\n💎 Тариф: Premium (400₽)\n\nТеперь вам доступны:\n• session met@d\n• B@t m@tod\n• DSA report 🇪🇺\n• Обычная жалоба\n• AU report 🇦🇺\n• Фриз карт\n\nПриятного использования!")
+    sent = await notify_user(new_id, "💎 Вам выдана Premium подписка!\n\n💎 Тариф: Premium (400₽)\n\nТеперь вам доступны:\n• session met@d\n• B@t m@tod\n• DSA report 🇪🇺\n• Стрессер ⚡\n• Обычная жалоба\n• AU report 🇦🇺\n• Фриз карт\n\nПриятного использования!")
     await message.answer(f"✅ {new_id} получил Premium. {'Уведомление отправлено.' if sent else '⚠️ Уведомление не доставлено.'}")
 
 @admin_dp.message(Command("removevip"))
