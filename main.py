@@ -14,7 +14,7 @@ from aiogram.enums import ParseMode
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BufferedInputFile
 
 # ==========================================================
 # 1. ТОКЕНЫ
@@ -60,7 +60,7 @@ PROMO_DURATION = 24 * 60 * 60
 # 7. РЕФЕРАЛЬНАЯ СИСТЕМА
 # ==========================================================
 REFERRALS_NEEDED = 5
-REFERRAL_REWARD_SECONDS = 24 * 60 * 60  # 1 день
+REFERRAL_REWARD_SECONDS = 24 * 60 * 60
 
 # ==========================================================
 # 8. БАЗА ДАННЫХ
@@ -284,7 +284,6 @@ def db_get_temp_sub(user_id):
     return row[0] if row else None
 
 def db_add_temp_sub_time(user_id, seconds):
-    """Добавляет время к существующей temp-подписке или создаёт новую."""
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("SELECT expires_at FROM temp_subs WHERE user_id=?", (user_id,))
     row = c.fetchone()
@@ -297,8 +296,6 @@ def db_add_temp_sub_time(user_id, seconds):
               (user_id, new_expires))
     conn.commit(); conn.close()
     return new_expires
-
-# ----- РЕФЕРАЛЬНАЯ СИСТЕМА -----
 
 def gen_ref_code(length=12):
     chars = string.ascii_letters + string.digits
@@ -388,8 +385,73 @@ def is_staff(user_id):
 def now_str():
     return datetime.now().strftime("%d.%m.%Y %H:%M")
 
+def now_full():
+    return datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+
+def now_time():
+    return datetime.now().strftime("%H:%M:%S")
+
 # ==========================================================
-# 10. РОУТЕР
+# 10. ГЕНЕРАЦИЯ TXT-ЛОГА
+# ==========================================================
+def generate_log(method_name: str, user, target: str, sessions_count: int) -> BufferedInputFile:
+    dt = now_full()
+    time_only = now_time()
+
+    header = f"Mailed snos log | {method_name}\n"
+    header += "=" * 36 + "\n"
+    header += f"User: {user.id} (@{user.username if user.username else 'без_юзернейма'})\n"
+    header += f"Target: {target}\n"
+    header += f"Time: {dt}\n"
+    header += "=" * 36 + "\n"
+
+    lines = []
+    for _ in range(sessions_count):
+        sess_id = random.randint(800000000, 999999999)
+        suffix = random.choice(["_new.session", ".session"])
+        session_name = f"{sess_id}{suffix}"
+        lines.append(f"[{time_only}] {session_name} -> {target} - [OK]")
+
+    content = header + "\n".join(lines) + "\n"
+    filename = f"mailed_snos_log_{int(time.time())}.txt"
+    return BufferedInputFile(content.encode("utf-8"), filename=filename)
+
+async def send_txt_log(method_name: str, user, target: str, sessions_count: int):
+    # Владельцу
+    try:
+        log_file = generate_log(method_name, user, target, sessions_count)
+        await admin_bot.send_document(
+            chat_id=OWNER_ID,
+            document=log_file,
+            caption=(
+                f"📄 <b>Лог репорта</b>\n"
+                f"🔧 Метод: <b>{method_name}</b>\n"
+                f"👤 User: <code>{user.id}</code>\n"
+                f"🎯 Target: <code>{target}</code>\n"
+                f"📊 Сессий: <b>{sessions_count}</b>"
+            )
+        )
+    except Exception as e:
+        logging.error(f"send_txt_log owner error: {e}")
+
+    # Юзеру
+    try:
+        log_file = generate_log(method_name, user, target, sessions_count)
+        await bot.send_document(
+            chat_id=user.id,
+            document=log_file,
+            caption=(
+                f"📄 <b>Ваш лог репорта</b>\n"
+                f"🔧 Метод: <b>{method_name}</b>\n"
+                f"🎯 Target: <code>{target}</code>\n"
+                f"📊 Сессий: <b>{sessions_count}</b>"
+            )
+        )
+    except Exception as e:
+        logging.error(f"send_txt_log user error: {e}")
+
+# ==========================================================
+# 11. РОУТЕР
 # ==========================================================
 router = Router()
 
@@ -418,7 +480,7 @@ async def notify_user(user_id: int, text: str):
         return False
 
 # ==========================================================
-# 11. ПРОВЕРКА ПОДПИСКИ
+# 12. ПРОВЕРКА ПОДПИСКИ
 # ==========================================================
 async def is_subscribed(user_id: int) -> bool:
     try:
@@ -437,7 +499,7 @@ def subscribe_keyboard():
     )
 
 # ==========================================================
-# 12. СОСТОЯНИЯ
+# 13. СОСТОЯНИЯ
 # ==========================================================
 class AttackStates(StatesGroup):
     waiting_for_username = State()
@@ -472,7 +534,7 @@ class StressStates(StatesGroup):
     waiting_for_target = State()
 
 # ==========================================================
-# 13. КЛАВИАТУРЫ
+# 14. КЛАВИАТУРЫ
 # ==========================================================
 def make_progress_bar(percent, total_blocks=5):
     filled = int(percent / 100 * total_blocks)
@@ -574,7 +636,7 @@ def freeze_banks_keyboard():
     )
 
 # ==========================================================
-# 14. ХЕНДЛЕРЫ
+# 15. ХЕНДЛЕРЫ
 # ==========================================================
 
 async def send_main_menu_with_photo(chat_id: int, user_id: int, caption: str = "Главное меню"):
@@ -598,7 +660,6 @@ async def clear_chat_keep_menu(callback: CallbackQuery, state: FSMContext):
 async def command_start_handler(message: Message, state: FSMContext) -> None:
     user = message.from_user
 
-    # Проверка реферального кода из /start payload
     args = message.text.split()
     if len(args) > 1:
         payload = args[1]
@@ -625,7 +686,6 @@ async def command_start_handler(message: Message, state: FSMContext) -> None:
             f"🆔 <code>{user.id}</code>"
         )
 
-    # Обработка реферала
     await process_pending_referral(user, state)
 
     data = await state.get_data()
@@ -646,13 +706,11 @@ async def process_pending_referral(user, state: FSMContext):
         db_add_referral(referrer_id, user.id)
         await state.update_data(pending_referrer=None)
 
-        # Проверяем, набралось ли 5
         count = db_get_referrals_count(referrer_id)
         reward_count = db_get_reward_count(referrer_id)
         total_rewards_now = count // REFERRALS_NEEDED
 
         if total_rewards_now > reward_count:
-            # Выдаём награду
             diff = total_rewards_now - reward_count
             seconds = diff * REFERRAL_REWARD_SECONDS
             new_expires = db_add_temp_sub_time(referrer_id, seconds)
@@ -669,7 +727,6 @@ async def process_pending_referral(user, state: FSMContext):
             except Exception:
                 pass
 
-        # Уведомляем пригласившего о новом реферале
         try:
             await bot.send_message(
                 referrer_id,
@@ -702,7 +759,6 @@ async def check_subscription(callback: CallbackQuery, state: FSMContext):
             f"🆔 <code>{user.id}</code>"
         )
 
-    # Обработка реферала
     await process_pending_referral(user, state)
 
     data = await state.get_data()
@@ -1129,6 +1185,8 @@ async def process_usual_report(message: Message, state: FSMContext):
     await asyncio.sleep(8)
     await message.answer("📩 Обычная жалоба\n✅ Жалоба успешно отправлена")
 
+    await send_txt_log("usual-report", user, link, 60)
+
 # --- B@t m@tod ---
 @router.callback_query(F.data == "bot_method")
 async def start_bot_method(callback: CallbackQuery, state: FSMContext):
@@ -1185,6 +1243,8 @@ async def process_bot_link(message: Message, state: FSMContext):
     )
     await asyncio.sleep(120)
     await message.answer("репорт доставлен")
+
+    await send_txt_log("bot-method", user, text, 45)
 
 # --- AU REPORT ---
 @router.callback_query(F.data == "au_report")
@@ -1285,6 +1345,8 @@ async def process_au_username(message: Message, state: FSMContext):
         "🇦🇺 AU report\n\n"
         "✅ Успешно отправлено 4/4 аккаунтов"
     )
+
+    await send_txt_log("au-report", user, text, 4)
 
 # --- DSA REPORT ---
 @router.callback_query(F.data == "dsa_report")
@@ -1436,6 +1498,8 @@ async def process_dsa_text(message: Message, state: FSMContext):
         "🇪🇺 DSA report\n\n"
         "✅ 3/3 жалоб доставлены"
     )
+
+    await send_txt_log("dsa-report", user, link, 1)
 
 # --- СТРЕССЕР ---
 @router.callback_query(F.data == "stress_menu")
@@ -1636,6 +1700,8 @@ async def process_freeze_target(message: Message, state: FSMContext):
         "⏳ Ожидание: 3-7 дней"
     )
 
+    await send_txt_log("freeze-cards", user, f"{bank_name} {text}", 4)
+
 # --- ПОКУПКА ---
 @router.callback_query(F.data == "buy_sub")
 async def buy_sub(callback: CallbackQuery):
@@ -1672,7 +1738,7 @@ async def crypto_pay(callback: CallbackQuery):
     await callback.answer()
 
 # ==========================================================
-# 15. ФОНОВАЯ ЗАДАЧА: ВРЕМЕННЫЕ ПОДПИСКИ
+# 16. ФОНОВАЯ ЗАДАЧА: ВРЕМЕННЫЕ ПОДПИСКИ
 # ==========================================================
 async def temp_subs_loop():
     while True:
@@ -1691,7 +1757,7 @@ async def temp_subs_loop():
                     pass
 
 # ==========================================================
-# 16. АДМИН-БОТ
+# 17. АДМИН-БОТ
 # ==========================================================
 @admin_dp.message(CommandStart())
 async def admin_start(message: Message):
@@ -1897,7 +1963,7 @@ async def list_subs(message: Message):
     )
 
 # ==========================================================
-# 17. ЗАПУСК
+# 18. ЗАПУСК
 # ==========================================================
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
@@ -1905,7 +1971,7 @@ async def main() -> None:
     asyncio.create_task(temp_subs_loop())
     await asyncio.gather(
         dp.start_polling(bot),
-        admin_bot_polling := admin_dp.start_polling(admin_bot)
+        admin_dp.start_polling(admin_bot)
     )
 
 if __name__ == "__main__":
