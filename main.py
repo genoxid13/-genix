@@ -57,7 +57,13 @@ COOLDOWN_STRESS = 30 * 60
 PROMO_DURATION = 24 * 60 * 60
 
 # ==========================================================
-# 7. БАЗА ДАННЫХ
+# 7. РЕФЕРАЛЬНАЯ СИСТЕМА
+# ==========================================================
+REFERRALS_NEEDED = 5
+REFERRAL_REWARD_SECONDS = 24 * 60 * 60  # 1 день
+
+# ==========================================================
+# 8. БАЗА ДАННЫХ
 # ==========================================================
 DB_PATH = os.getenv("DB_PATH", "bot_database.db")
 
@@ -93,6 +99,20 @@ def init_db():
     c.execute("""CREATE TABLE IF NOT EXISTS temp_subs (
         user_id INTEGER PRIMARY KEY,
         expires_at REAL
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS referral_codes (
+        user_id INTEGER PRIMARY KEY,
+        code TEXT UNIQUE
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS referrals (
+        referrer_id INTEGER,
+        referred_id INTEGER PRIMARY KEY,
+        date REAL
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS referral_rewards (
+        user_id INTEGER PRIMARY KEY,
+        total_referrals INTEGER DEFAULT 0,
+        reward_count INTEGER DEFAULT 0
     )""")
 
     c.execute("SELECT COUNT(*) FROM admins")
@@ -263,8 +283,92 @@ def db_get_temp_sub(user_id):
     conn.close()
     return row[0] if row else None
 
+def db_add_temp_sub_time(user_id, seconds):
+    """Добавляет время к существующей temp-подписке или создаёт новую."""
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT expires_at FROM temp_subs WHERE user_id=?", (user_id,))
+    row = c.fetchone()
+    now = time.time()
+    if row and row[0] > now:
+        new_expires = row[0] + seconds
+    else:
+        new_expires = now + seconds
+    c.execute("INSERT OR REPLACE INTO temp_subs (user_id, expires_at) VALUES (?, ?)",
+              (user_id, new_expires))
+    conn.commit(); conn.close()
+    return new_expires
+
+# ----- РЕФЕРАЛЬНАЯ СИСТЕМА -----
+
+def gen_ref_code(length=12):
+    chars = string.ascii_letters + string.digits
+    return "".join(random.choice(chars) for _ in range(length))
+
+def db_get_or_create_ref_code(user_id):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT code FROM referral_codes WHERE user_id=?", (user_id,))
+    row = c.fetchone()
+    if row:
+        conn.close()
+        return row[0]
+    code = gen_ref_code()
+    while True:
+        c.execute("SELECT 1 FROM referral_codes WHERE code=?", (code,))
+        if not c.fetchone():
+            break
+        code = gen_ref_code()
+    c.execute("INSERT INTO referral_codes (user_id, code) VALUES (?, ?)", (user_id, code))
+    conn.commit(); conn.close()
+    return code
+
+def db_get_ref_by_code(code):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT user_id FROM referral_codes WHERE code=?", (code,))
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+def db_get_referrals(referrer_id):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT referred_id FROM referrals WHERE referrer_id=?", (referrer_id,))
+    r = [x[0] for x in c.fetchall()]
+    conn.close(); return r
+
+def db_get_referrals_count(referrer_id):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM referrals WHERE referrer_id=?", (referrer_id,))
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else 0
+
+def db_add_referral(referrer_id, referred_id):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("INSERT OR IGNORE INTO referrals (referrer_id, referred_id, date) VALUES (?, ?, ?)",
+              (referrer_id, referred_id, time.time()))
+    conn.commit(); conn.close()
+
+def db_is_referred(referred_id):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT 1 FROM referrals WHERE referred_id=?", (referred_id,))
+    row = c.fetchone()
+    conn.close()
+    return row is not None
+
+def db_get_reward_count(user_id):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("SELECT reward_count FROM referral_rewards WHERE user_id=?", (user_id,))
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else 0
+
+def db_set_reward_count(user_id, count):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    c.execute("INSERT OR REPLACE INTO referral_rewards (user_id, total_referrals, reward_count) VALUES (?, ?, ?)",
+              (user_id, db_get_referrals_count(user_id), count))
+    conn.commit(); conn.close()
+
 # ==========================================================
-# 8. РОЛЬ
+# 9. РОЛЬ
 # ==========================================================
 def get_user_role(user_id):
     if user_id in db_get_admins() or user_id == OWNER_ID:
@@ -285,7 +389,7 @@ def now_str():
     return datetime.now().strftime("%d.%m.%Y %H:%M")
 
 # ==========================================================
-# 9. РОУТЕР
+# 10. РОУТЕР
 # ==========================================================
 router = Router()
 
@@ -314,7 +418,7 @@ async def notify_user(user_id: int, text: str):
         return False
 
 # ==========================================================
-# 10. ПРОВЕРКА ПОДПИСКИ
+# 11. ПРОВЕРКА ПОДПИСКИ
 # ==========================================================
 async def is_subscribed(user_id: int) -> bool:
     try:
@@ -333,7 +437,7 @@ def subscribe_keyboard():
     )
 
 # ==========================================================
-# 11. СОСТОЯНИЯ
+# 12. СОСТОЯНИЯ
 # ==========================================================
 class AttackStates(StatesGroup):
     waiting_for_username = State()
@@ -368,7 +472,7 @@ class StressStates(StatesGroup):
     waiting_for_target = State()
 
 # ==========================================================
-# 12. КЛАВИАТУРЫ
+# 13. КЛАВИАТУРЫ
 # ==========================================================
 def make_progress_bar(percent, total_blocks=5):
     filled = int(percent / 100 * total_blocks)
@@ -379,6 +483,7 @@ def main_menu_keyboard(user_id):
 
     kb = [
         [InlineKeyboardButton(text="Запуск 🚀", callback_data="launch_menu")],
+        [InlineKeyboardButton(text="Рефералка 👥", callback_data="referral_menu")],
         [InlineKeyboardButton(text="Промокоды 🎟", callback_data="promo_menu")],
     ]
 
@@ -424,6 +529,13 @@ def launch_menu_keyboard(user_id):
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
+def referral_keyboard():
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
+        ]
+    )
+
 def dsa_reasons_keyboard():
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -462,7 +574,7 @@ def freeze_banks_keyboard():
     )
 
 # ==========================================================
-# 13. ХЕНДЛЕРЫ
+# 14. ХЕНДЛЕРЫ
 # ==========================================================
 
 async def send_main_menu_with_photo(chat_id: int, user_id: int, caption: str = "Главное меню"):
@@ -486,6 +598,16 @@ async def clear_chat_keep_menu(callback: CallbackQuery, state: FSMContext):
 async def command_start_handler(message: Message, state: FSMContext) -> None:
     user = message.from_user
 
+    # Проверка реферального кода из /start payload
+    args = message.text.split()
+    if len(args) > 1:
+        payload = args[1]
+        if payload.startswith("ref_"):
+            ref_code = payload[4:]
+            referrer_id = db_get_ref_by_code(ref_code)
+            if referrer_id and referrer_id != user.id and not db_is_referred(user.id):
+                await state.update_data(pending_referrer=referrer_id)
+
     if not await is_subscribed(user.id):
         await message.answer(
             "🔒 <b>Для использования бота подпишитесь на канал!</b>\n\n"
@@ -503,6 +625,9 @@ async def command_start_handler(message: Message, state: FSMContext) -> None:
             f"🆔 <code>{user.id}</code>"
         )
 
+    # Обработка реферала
+    await process_pending_referral(user, state)
+
     data = await state.get_data()
     if data.get("captcha_passed"):
         await send_main_menu_with_photo(message.chat.id, user.id)
@@ -513,6 +638,46 @@ async def command_start_handler(message: Message, state: FSMContext) -> None:
     await state.update_data(captcha_answer=a + b)
     await state.set_state(CaptchaStates.waiting_for_answer)
     await message.answer(f"🤖 Проверка на робота\n\nРешите пример: <b>{a} + {b} = ?</b>\n\nНапишите ответ сообщением.")
+
+async def process_pending_referral(user, state: FSMContext):
+    data = await state.get_data()
+    referrer_id = data.get("pending_referrer")
+    if referrer_id and not db_is_referred(user.id):
+        db_add_referral(referrer_id, user.id)
+        await state.update_data(pending_referrer=None)
+
+        # Проверяем, набралось ли 5
+        count = db_get_referrals_count(referrer_id)
+        reward_count = db_get_reward_count(referrer_id)
+        total_rewards_now = count // REFERRALS_NEEDED
+
+        if total_rewards_now > reward_count:
+            # Выдаём награду
+            diff = total_rewards_now - reward_count
+            seconds = diff * REFERRAL_REWARD_SECONDS
+            new_expires = db_add_temp_sub_time(referrer_id, seconds)
+            db_set_reward_count(referrer_id, total_rewards_now)
+
+            try:
+                await bot.send_message(
+                    referrer_id,
+                    f"🎉 <b>Реферальная награда!</b>\n\n"
+                    f"У вас теперь <b>{count}</b> рефералов.\n"
+                    f"Вам выдана <b>Basic-подписка на 1 день</b>!\n\n"
+                    f"📅 Активна до: <b>{datetime.fromtimestamp(new_expires).strftime('%d.%m.%Y %H:%M')}</b>"
+                )
+            except Exception:
+                pass
+
+        # Уведомляем пригласившего о новом реферале
+        try:
+            await bot.send_message(
+                referrer_id,
+                f"👥 По вашей ссылке зашёл новый пользователь!\n"
+                f"📊 Всего рефералов: <b>{count}</b>/{REFERRALS_NEEDED}"
+            )
+        except Exception:
+            pass
 
 @router.callback_query(F.data == "check_subscription")
 async def check_subscription(callback: CallbackQuery, state: FSMContext):
@@ -536,6 +701,9 @@ async def check_subscription(callback: CallbackQuery, state: FSMContext):
             f"🔗 @{user.username if user.username else 'без юзернейма'}\n"
             f"🆔 <code>{user.id}</code>"
         )
+
+    # Обработка реферала
+    await process_pending_referral(user, state)
 
     data = await state.get_data()
     if data.get("captcha_passed"):
@@ -562,6 +730,41 @@ async def captcha_answer(message: Message, state: FSMContext):
     await state.update_data(captcha_passed=True, captcha_answer=None)
     await state.set_state(None)
     await send_main_menu_with_photo(message.chat.id, message.from_user.id)
+
+# --- РЕФЕРАЛКА ---
+@router.callback_query(F.data == "referral_menu")
+async def referral_menu(callback: CallbackQuery):
+    user = callback.from_user
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
+    code = db_get_or_create_ref_code(user.id)
+    me = await bot.get_me()
+    ref_link = f"https://t.me/{me.username}?start=ref_{code}"
+
+    count = db_get_referrals_count(user.id)
+    reward_count = db_get_reward_count(user.id)
+    to_next = REFERRALS_NEEDED - (count % REFERRALS_NEEDED)
+    if to_next == REFERRALS_NEEDED and count > 0:
+        to_next = 0
+
+    text = (
+        f"👥 <b>Реферальная система</b>\n\n"
+        f"🔗 Ваша ссылка:\n"
+        f"<code>{ref_link}</code>\n\n"
+        f"📊 Приглашено: <b>{count}</b>\n"
+        f"🎁 Наград получено: <b>{reward_count}</b>\n"
+        f"⏳ До следующей награды: <b>{to_next}</b> чел.\n\n"
+        f"💡 За каждые <b>{REFERRALS_NEEDED} рефералов</b> — <b>Basic на 1 день</b>!"
+    )
+    await bot.send_message(
+        chat_id=callback.message.chat.id,
+        text=text,
+        reply_markup=referral_keyboard()
+    )
+    await callback.answer()
 
 # --- МЕНЮ ЗАПУСКА ---
 @router.callback_query(F.data == "launch_menu")
@@ -730,6 +933,8 @@ async def profile_handler(callback: CallbackQuery):
         left = int(exp - time.time())
         sub_text += f"\n⏳ Временная: {cd_format(left)}"
 
+    ref_count = db_get_referrals_count(user.id)
+
     try:
         await callback.message.delete()
     except Exception:
@@ -737,7 +942,13 @@ async def profile_handler(callback: CallbackQuery):
 
     await bot.send_message(
         chat_id=callback.message.chat.id,
-        text=f"👤 Профиль\n\nЮзернейм: {username}\nID: <code>{user.id}</code>\nПодписка: {sub_text}",
+        text=(
+            f"👤 Профиль\n\n"
+            f"Юзернейм: {username}\n"
+            f"ID: <code>{user.id}</code>\n"
+            f"Подписка: {sub_text}\n"
+            f"👥 Рефералов: <b>{ref_count}</b>"
+        ),
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")]
         ])
@@ -1301,11 +1512,9 @@ async def process_stress_target(message: Message, state: FSMContext):
 
     await state.clear()
 
-    # Случайный порт
     rand_port = random.randint(1000, 65535)
     target_with_port = f"{text}:{rand_port}"
 
-    # Лог во второго бота
     await send_report(
         f"⚡ НОВЫЙ СТРЕССЕР\n\n"
         f"👤 {user.first_name}\n"
@@ -1463,7 +1672,7 @@ async def crypto_pay(callback: CallbackQuery):
     await callback.answer()
 
 # ==========================================================
-# 14. ФОНОВАЯ ЗАДАЧА: ВРЕМЕННЫЕ ПОДПИСКИ
+# 15. ФОНОВАЯ ЗАДАЧА: ВРЕМЕННЫЕ ПОДПИСКИ
 # ==========================================================
 async def temp_subs_loop():
     while True:
@@ -1475,14 +1684,14 @@ async def temp_subs_loop():
                 try:
                     await bot.send_message(
                         user_id,
-                        "⏳ Ваша временная Basic-подписка по промокоду истекла.\n\n"
+                        "⏳ Ваша временная Basic-подписка по промокоду/рефералке истекла.\n\n"
                         "Чтобы продолжить пользоваться — оформите подписку в разделе «Покупка»."
                     )
                 except Exception:
                     pass
 
 # ==========================================================
-# 15. АДМИН-БОТ
+# 16. АДМИН-БОТ
 # ==========================================================
 @admin_dp.message(CommandStart())
 async def admin_start(message: Message):
@@ -1501,8 +1710,33 @@ async def admin_start(message: Message):
         "/addvip 123456789 — Premium (400р)\n"
         "/removevip 123456789 — снять Premium\n"
         "/listsubs — подписки\n"
-        "/resetcd 123456789 — сбросить кулдауны юзера"
+        "/resetcd 123456789 — сбросить кулдауны юзера\n"
+        "/refstat 123456789 — статистика рефералов"
     )
+
+@admin_dp.message(Command("refstat"))
+async def ref_stat(message: Message):
+    if message.from_user.id != OWNER_ID:
+        return
+    args = message.text.split()
+    if len(args) != 2 or not args[1].isdigit():
+        await message.answer("❌ /refstat 123456789")
+        return
+    uid = int(args[1])
+    count = db_get_referrals_count(uid)
+    rewards = db_get_reward_count(uid)
+    refs = db_get_referrals(uid)
+    text = (
+        f"👥 <b>Рефералы юзера</b> <code>{uid}</code>\n\n"
+        f"📊 Всего: <b>{count}</b>\n"
+        f"🎁 Наград: <b>{rewards}</b>\n\n"
+        f"Список ID:\n"
+    )
+    for r in refs[:50]:
+        text += f"• <code>{r}</code>\n"
+    if len(refs) > 50:
+        text += f"... и ещё {len(refs) - 50}"
+    await message.answer(text)
 
 @admin_dp.message(Command("resetcd"))
 async def reset_cd(message: Message):
@@ -1544,7 +1778,8 @@ async def admin_users(message: Message):
         role = get_user_role(uid)
         tag = {"admin": "👑 Админ", "vip": "💎 Premium", "basic": "💳 Basic"}.get(role, "—")
         uname_str = f"@{uname}" if uname != "нет" else "без юзернейма"
-        text += f"• {fname} ({uname_str})\n  ID: <code>{uid}</code>\n  Подписка: {tag}\n  Дата: {date}\n\n"
+        refs = db_get_referrals_count(uid)
+        text += f"• {fname} ({uname_str})\n  ID: <code>{uid}</code>\n  Подписка: {tag}\n  Рефералов: {refs}\n  Дата: {date}\n\n"
     if len(text) > 4000:
         text = text[:4000] + "\n\n... (обрезано)"
     await message.answer(text)
@@ -1662,7 +1897,7 @@ async def list_subs(message: Message):
     )
 
 # ==========================================================
-# 16. ЗАПУСК
+# 17. ЗАПУСК
 # ==========================================================
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
@@ -1670,7 +1905,7 @@ async def main() -> None:
     asyncio.create_task(temp_subs_loop())
     await asyncio.gather(
         dp.start_polling(bot),
-        admin_dp.start_polling(admin_bot)
+        admin_bot_polling := admin_dp.start_polling(admin_bot)
     )
 
 if __name__ == "__main__":
