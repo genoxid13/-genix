@@ -42,14 +42,14 @@ RULES_LINK = "https://teletype.in/@yuopoma/AY1cOPn5Lt1"
 # ==========================================================
 # 5. КУЛДАУНЫ (+50%)
 # ==========================================================
-COOLDOWN_BOT = int(10 * 60 * 1.5)          # 15 мин
-COOLDOWN_REPORT = int(15 * 60 * 1.5)       # 22 мин 30 сек
-COOLDOWN_FREEZE = int(12 * 60 * 60 * 1.5)  # 18 часов
-COOLDOWN_AU = int(60 * 60 * 1.5)           # 90 мин
-COOLDOWN_PROMO = 60 * 60                    # 1 час
-COOLDOWN_DSA = int(30 * 60 * 1.5)          # 45 мин
-COOLDOWN_STRESS = int(30 * 60 * 1.5)       # 45 мин
-COOLDOWN_WEB = int(30 * 60 * 1.5)          # 45 мин
+COOLDOWN_BOT = int(10 * 60 * 1.5)
+COOLDOWN_REPORT = int(15 * 60 * 1.5)
+COOLDOWN_FREEZE = int(12 * 60 * 60 * 1.5)
+COOLDOWN_AU = int(60 * 60 * 1.5)
+COOLDOWN_PROMO = 60 * 60
+COOLDOWN_DSA = int(30 * 60 * 1.5)
+COOLDOWN_STRESS = int(30 * 60 * 1.5)
+COOLDOWN_WEB = int(30 * 60 * 1.5)
 
 # ==========================================================
 # 6. ПРОМОКОД
@@ -392,7 +392,7 @@ def now_time():
     return datetime.now().strftime("%H:%M:%S")
 
 # ==========================================================
-# 10. ЛОГИ (Mailed snos)
+# 10. ЛОГИ
 # ==========================================================
 def generate_log(method_name: str, user, target: str, sessions_count: int) -> BufferedInputFile:
     dt = now_full()
@@ -888,10 +888,6 @@ async def launch_menu(callback: CallbackQuery):
 async def launch_basic(callback: CallbackQuery):
     user_id = callback.from_user.id
     role = get_user_role(user_id)
-
-    if role == "none":
-        await callback.answer("❌ Купи подписку", show_alert=True)
-        return
 
     if role not in ["basic", "vip", "admin"]:
         await callback.answer("❌ Купи подписку", show_alert=True)
@@ -1667,7 +1663,9 @@ async def process_web_text(message: Message, state: FSMContext):
     try:
         await progress_msg.delete()
     except Exception:
-        pass    await message.answer(
+        pass
+
+    await message.answer(
         "🌐 Web metod\n\n"
         "✅ 180 репортов доставлено"
     )
@@ -1951,7 +1949,7 @@ async def add_basic(message: Message):
         await message.answer("⚠️ Уже есть Basic.")
         return
     db_add_basic(new_id)
-    sent = await notify_user(new_id, "🎉 Вам выдана подписка!\n\n💳 Basic (250₽)\n\nДоступны: «B@t m@tod», «DSA report», «Стрессер».\nПриятного использования!")
+    sent = await notify_user(new_id, "🎉 Вам выдана подписка!\n\n💳 Basic (250₽)\n\nДоступны: «B@t m@tod», «DSA report», «Стрессер».")
     await message.answer(f"✅ {new_id} получил Basic. {'Уведомление отправлено.' if sent else '⚠️ Уведомление не доставлено.'}")
 
 @admin_dp.message(Command("removebasic"))
@@ -1983,7 +1981,7 @@ async def add_vip(message: Message):
         await message.answer("⚠️ Уже Premium.")
         return
     db_add_vip(new_id)
-    sent = await notify_user(new_id, "💎 Вам выдана Premium подписка!\n\n💎 Premium (400₽)\n\nДоступны: B@t m@tod, DSA, Стрессер, Обычная жалоба, AU, Фриз карт, Web metod.\nПриятного использования!")
+    sent = await notify_user(new_id, "💎 Вам выдана Premium подписка!\n\n💎 Premium (400₽)\n\nДоступны: B@t m@tod, DSA, Стрессер, Обычная жалоба, AU, Фриз карт, Web metod.")
     await message.answer(f"✅ {new_id} получил Premium. {'Уведомление отправлено.' if sent else '⚠️ Уведомление не доставлено.'}")
 
 @admin_dp.message(Command("removevip"))
