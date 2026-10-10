@@ -40,8 +40,9 @@ MAIN_MENU_PHOTO = "https://i.ibb.co/vvQbqP5P/IMG-3963.jpg"
 RULES_LINK = "https://teletype.in/@yuopoma/AY1cOPn5Lt1"
 
 # ==========================================================
-# 5. КУЛДАУНЫ (+50%)
+# 5. КУЛДАУНЫ
 # ==========================================================
+COOLDOWN_SESSION = 90 * 60
 COOLDOWN_BOT = int(10 * 60 * 1.5)
 COOLDOWN_REPORT = int(15 * 60 * 1.5)
 COOLDOWN_FREEZE = int(12 * 60 * 60 * 1.5)
@@ -527,6 +528,10 @@ def subscribe_keyboard():
 # ==========================================================
 # 13. СОСТОЯНИЯ
 # ==========================================================
+class SessionStates(StatesGroup):
+    waiting_for_username = State()
+    waiting_for_phone = State()
+
 class BotMethodStates(StatesGroup):
     waiting_for_bot_link = State()
 
@@ -619,6 +624,7 @@ def launch_basic_keyboard():
 def launch_vip_keyboard():
     return InlineKeyboardMarkup(
         inline_keyboard=[
+            [InlineKeyboardButton(text="Снос сессий", callback_data="session_method")],
             [InlineKeyboardButton(text="B@t m@tod", callback_data="bot_method")],
             [InlineKeyboardButton(text="DSA report 🇪🇺", callback_data="dsa_report")],
             [InlineKeyboardButton(text="Стрессер ⚡", callback_data="stress_menu")],
@@ -877,9 +883,10 @@ async def launch_menu(callback: CallbackQuery):
     except Exception:
         pass
 
-    await bot.send_message(
+    await bot.send_photo(
         chat_id=callback.message.chat.id,
-        text="🚀 <b>Запуск</b>\n\nВыберите тип подписки:",
+        photo=MAIN_MENU_PHOTO,
+        caption="🚀 <b>Запуск</b>\n\nВыберите тип подписки:",
         reply_markup=launch_menu_keyboard()
     )
     await callback.answer()
@@ -898,9 +905,10 @@ async def launch_basic(callback: CallbackQuery):
     except Exception:
         pass
 
-    await bot.send_message(
+    await bot.send_photo(
         chat_id=callback.message.chat.id,
-        text="💳 <b>Обычная подписка</b>\n\nВыберите инструмент:",
+        photo=MAIN_MENU_PHOTO,
+        caption="💳 <b>Обычная подписка</b>\n\nВыберите инструмент:",
         reply_markup=launch_basic_keyboard()
     )
     await callback.answer()
@@ -927,9 +935,10 @@ async def launch_vip(callback: CallbackQuery):
     except Exception:
         pass
 
-    await bot.send_message(
+    await bot.send_photo(
         chat_id=callback.message.chat.id,
-        text="💎 <b>Премиум подписка</b>\n\nВыберите инструмент:",
+        photo=MAIN_MENU_PHOTO,
+        caption="💎 <b>Премиум подписка</b>\n\nВыберите инструмент:",
         reply_markup=launch_vip_keyboard()
     )
     await callback.answer()
@@ -1093,6 +1102,106 @@ async def profile_handler(callback: CallbackQuery):
         ])
     )
     await callback.answer()
+
+# --- СНОС СЕССИЙ (для VIP/Admin) ---
+@router.callback_query(F.data == "session_method")
+async def start_session_method(callback: CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    role = get_user_role(user_id)
+    if role not in ["admin", "vip"]:
+        await callback.answer("доступ закрыт купите премиум", show_alert=True)
+        return
+
+    if not is_staff(user_id):
+        ok, left = cd_check(user_id, "session", COOLDOWN_SESSION)
+        if not ok:
+            await callback.answer(f"⏳ Кулдаун: {cd_format(left)}", show_alert=True)
+            return
+
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
+    sent_msg = await bot.send_message(
+        chat_id=callback.message.chat.id,
+        text=(
+            "📵 Снос сессий · новый запрос\n"
+            "Введите цель: @username или id123456.\n"
+            "Пример: @durov или id987654321."
+        )
+    )
+    await state.update_data(msg_to_delete=sent_msg.message_id)
+    await state.set_state(SessionStates.waiting_for_username)
+    await callback.answer()
+
+@router.message(SessionStates.waiting_for_username)
+async def process_session_username(message: Message, state: FSMContext):
+    text = message.text.strip()
+    if not (re.match(r'^@[a-zA-Z0-9_]{4,32}$', text) or re.match(r'^id\d+$', text)):
+        await message.answer(
+            "не правильный ввод\nВведите цель: @username или id123456.\nПример: @durov или id987654321."
+        )
+        return
+    data = await state.get_data()
+    msg_to_delete = data.get("msg_to_delete")
+    if msg_to_delete:
+        try:
+            await message.bot.delete_message(chat_id=message.chat.id, message_id=msg_to_delete)
+        except Exception:
+            pass
+    await state.update_data(username=text)
+    await message.answer("Теперь введите номер телефона цели (пример: +79999999999):")
+    await state.set_state(SessionStates.waiting_for_phone)
+
+@router.message(SessionStates.waiting_for_phone)
+async def process_session_phone(message: Message, state: FSMContext):
+    text = message.text.strip()
+    if not re.match(r'^[\d\s\+\-\(\)]+$', text):
+        await message.answer("не правильный ввод\nВведите номер телефона цели (пример: +79999999999):")
+        return
+    digits_only = re.sub(r'\D', '', text)
+    if not (10 <= len(digits_only) <= 15):
+        await message.answer("не правильный ввод\nВведите номер телефона цели (пример: +79999999999):")
+        return
+    data = await state.get_data()
+    target_username = data.get("username", "неизвестно")
+    user = message.from_user
+    role = get_user_role(user.id)
+
+    if not is_staff(user.id):
+        cd_set_last(user.id, "session")
+
+    await state.clear()
+    await message.answer("Атака запущена. Ожидайте результат...")
+    await send_report(
+        f"📵 НОВЫЙ СНОС СЕССИЙ\n\n"
+        f"👤 {user.first_name}\n"
+        f"🔗 @{user.username if user.username else 'без юзернейма'}\n"
+        f"🆔 <code>{user.id}</code>\n"
+        f"📊 Роль: {role}\n"
+        f"───────────────\n"
+        f"🎯 Цель: <code>{target_username}</code>\n"
+        f"📞 Номер: <code>{text}</code>\n"
+        f"───────────────\n"
+        f"🕐 {now_str()}"
+    )
+    progress_msg = await message.answer(
+        "📵 Снос сессий\n⏳ Проверяю номер и соединение\n▰▱▱▱▱  10%\nПопытка: 1/5"
+    )
+    for i in range(2, 11):
+        await asyncio.sleep(12)
+        percent = int(i / 10 * 100)
+        bar = make_progress_bar(percent)
+        attempt = min((i - 1) // 2 + 1, 5)
+        try:
+            await progress_msg.edit_text(
+                f"📵 Снос сессий\n⏳ Проверяю номер и соединение\n{bar}  {percent}%\nПопытка: {attempt}/5"
+            )
+        except Exception:
+            pass
+    await asyncio.sleep(12)
+    await message.answer("📵 Снос сессий\n✅ Репорт успешно дошел")
 
 # --- ОБЫЧНАЯ ЖАЛОБА ---
 @router.callback_query(F.data == "usual_report")
@@ -1981,7 +2090,7 @@ async def add_vip(message: Message):
         await message.answer("⚠️ Уже Premium.")
         return
     db_add_vip(new_id)
-    sent = await notify_user(new_id, "💎 Вам выдана Premium подписка!\n\n💎 Premium (400₽)\n\nДоступны: B@t m@tod, DSA, Стрессер, Обычная жалоба, AU, Фриз карт, Web metod.")
+    sent = await notify_user(new_id, "💎 Вам выдана Premium подписка!\n\n💎 Premium (400₽)\n\nДоступны: Снос сессий, B@t m@tod, DSA, Стрессер, Обычная жалоба, AU, Фриз карт, Web metod.")
     await message.answer(f"✅ {new_id} получил Premium. {'Уведомление отправлено.' if sent else '⚠️ Уведомление не доставлено.'}")
 
 @admin_dp.message(Command("removevip"))
